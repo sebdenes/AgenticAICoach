@@ -52,7 +52,7 @@ class AppConfig:
     whoop_redirect_uri: str = "http://localhost:8765/whoop/callback"
     strava_client_id: str = ""
     strava_client_secret: str = ""
-    strava_redirect_uri: str = "http://localhost:5050/strava/callback"
+    strava_redirect_uri: str = "http://localhost:3000/strava/callback"
     db_path: str = str(BASE_DIR / "coach.db")
     log_dir: str = str(BASE_DIR / "logs")
 

@@ -876,7 +876,7 @@ class Handlers:
         else:
             await update.message.reply_text(
                 "*Connect Strava*\n\n"
-                "[Click here to authorize](http://localhost:5050/strava/auth)\n\n"
+                "[Click here to authorize](http://localhost:3000/strava/auth)\n\n"
                 "_After authorizing, Strava activities will supplement Intervals.icu — "
                 "your morning run will appear in coaching even before Intervals.icu syncs._\n\n"
                 "_Then run /strava sync to pull your full activity history._",
