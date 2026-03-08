@@ -47,6 +47,7 @@ class Handlers:
         chat_id: str,
         whoop: WhoopClient = None,
         strava=None,
+        reactor=None,
     ):
         self.iv = iv
         self.engine = engine
@@ -55,6 +56,7 @@ class Handlers:
         self.chat_id = chat_id
         self.whoop = whoop
         self.strava = strava
+        self.reactor = reactor
         # Knowledge base (still needed for periodization)
         self._kb = KnowledgeBase()
         # Phase 2 modules
@@ -974,7 +976,28 @@ class Handlers:
             stats.append(f"{elev:.0f}m elev")
         stats_str = " · ".join(stats)
 
+        # Run reactor post-activity analysis if available
+        reactor_context = ""
+        if self.reactor:
+            try:
+                reactor_result = await self.reactor.on_activity(act)
+                notes = reactor_result.get("coaching_notes", [])
+                deviation = reactor_result.get("deviation", {})
+                if notes or deviation:
+                    parts = ["## Post-Activity Reactor Analysis"]
+                    if deviation:
+                        parts.append(f"TSS: actual {deviation.get('actual_tss', '?')} vs planned {deviation.get('planned_tss', '?')} (delta {deviation.get('tss_delta', 0):+.0f})")
+                        parts.append(f"Duration: actual {deviation.get('actual_duration_min', '?')}min vs planned {deviation.get('planned_duration_min', '?')}min")
+                    for n in notes:
+                        parts.append(f"- {n}")
+                    if reactor_result.get("adaptation_triggered"):
+                        parts.append("- **Significant deviation detected — consider adapting upcoming sessions**")
+                    reactor_context = "\n".join(parts) + "\n\n---\n\n"
+            except Exception as exc:
+                log.warning("Reactor post-activity analysis failed: %s", exc)
+
         prompt = (
+            f"{reactor_context}"
             f"I just completed a {sport}: '{name}' ({stats_str}). "
             "Analyse this workout in the context of my current training load and race "
             "preparation. Cover: "
@@ -1177,12 +1200,25 @@ class Handlers:
     # ── Scheduled Check-ins ───────────────────────────────────
 
     async def run_scheduled_checkin(self, checkin_type: str, bot):
-        """Run a scheduled check-in and send to the configured chat."""
+        """Run a scheduled check-in and send to the configured chat.
+
+        If the reactor has prepared a morning/evening brief, it is injected
+        into the prompt so Claude has full context before coaching.
+        """
         log.info(f"Running scheduled {checkin_type} check-in")
-        text = await self.engine.respond(
-            f"Run the {checkin_type} check-in for {self.athlete.name}.",
-            checkin_type=checkin_type,
-        )
+
+        # Inject reactor brief if available
+        reactor_brief = ""
+        if self.reactor:
+            brief_data = self.db.get_state("reactor_morning_brief")
+            if brief_data and checkin_type in ("morning", "afternoon"):
+                reactor_brief = brief_data if isinstance(brief_data, str) else str(brief_data)
+
+        prompt = f"Run the {checkin_type} check-in for {self.athlete.name}."
+        if reactor_brief:
+            prompt = f"{reactor_brief}\n\n---\n\n{prompt}"
+
+        text = await self.engine.respond(prompt, checkin_type=checkin_type)
         await bot.send_message(chat_id=self.chat_id, text=text, parse_mode="Markdown")
         log.info(f"{checkin_type} check-in sent")
 

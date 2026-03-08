@@ -126,6 +126,28 @@ TOOL_SCHEMAS = [
             "required": [],
         },
     },
+    {
+        "name": "get_alerts",
+        "description": "Run proactive alert detectors on recent wellness and activity data. Detects: HRV decline, RHR elevation, sleep debt, overtraining risk (TSB < -30), high ramp rate, compliance drops, and more. Returns alerts sorted by severity (critical first). Use this to identify risks and concerns proactively.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "days": {"type": "integer", "description": "Number of past days of data to analyze (7-90). Default 30.", "default": 30}
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "get_patterns",
+        "description": "Analyze historical data for actionable coaching patterns: sleep-performance correlation, HRV trends (stable/improving/declining/suppressed), training response patterns, optimal training days, fatigue accumulation, and an athlete behavior model. Use when you need deeper insight into how the athlete responds to training over time.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "days": {"type": "integer", "description": "Number of past days of data to analyze (14-90). Default 30.", "default": 30}
+            },
+            "required": [],
+        },
+    },
 ]
 
 
@@ -497,6 +519,47 @@ class CoachTools:
         # Exclude large objects (training plan) from unfiltered dump
         excluded = {"training_plan"}
         return {k: v for k, v in all_state.items() if k not in excluded}
+
+    # ── Proactive intelligence tools ──────────────────────────────────────────
+
+    async def _tool_get_alerts(self, days: int = 30) -> dict:
+        """Run all alert detectors and return risks sorted by severity."""
+        days = max(7, min(days, 90))
+        from modules.alerts import generate_alerts
+        w = await self.iv.wellness(days=days)
+        a = await self.iv.activities(days=days)
+        config = {
+            "rhr_baseline": getattr(self.athlete, "rhr_baseline", 45),
+            "hrv_baseline": getattr(self.athlete, "hrv_baseline", 55),
+            "sleep_target_hours": getattr(self.athlete, "sleep_target_hours", 7.5),
+            "race_date": getattr(self.athlete, "race_date", None),
+            "race_name": getattr(self.athlete, "race_name", None),
+        }
+        alerts = generate_alerts(w, a, config)
+        return {
+            "days_analyzed": days,
+            "alert_count": len(alerts),
+            "alerts": alerts,
+        }
+
+    async def _tool_get_patterns(self, days: int = 30) -> dict:
+        """Analyze historical data for actionable coaching patterns."""
+        days = max(14, min(days, 90))
+        from modules.intelligence import analyze_patterns
+        w = await self.iv.wellness(days=days)
+        a = await self.iv.activities(days=days)
+        config = {
+            "rhr_baseline": getattr(self.athlete, "rhr_baseline", 45),
+            "hrv_baseline": getattr(self.athlete, "hrv_baseline", 55),
+            "sleep_target_hours": getattr(self.athlete, "sleep_target_hours", 7.5),
+            "race_date": getattr(self.athlete, "race_date", None),
+            "weight_kg": getattr(self.athlete, "weight_kg", 80),
+        }
+        patterns = analyze_patterns(w, a, config)
+        return {
+            "days_analyzed": days,
+            "patterns": patterns,
+        }
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────

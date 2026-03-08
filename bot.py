@@ -145,7 +145,16 @@ def main():
         strava=strava,
     )
 
-    hdlrs = Handlers(iv, engine, db, athlete, app_cfg.telegram_chat_id, whoop=whoop, strava=strava)
+    # Initialize autonomous coaching reactor
+    reactor = None
+    try:
+        from reactor import CoachingReactor
+        reactor = CoachingReactor(iv=iv, db=db, athlete=athlete, whoop=whoop, strava=strava)
+        log.info("Coaching reactor initialized")
+    except Exception as e:
+        log.warning(f"Reactor init failed: {e}")
+
+    hdlrs = Handlers(iv, engine, db, athlete, app_cfg.telegram_chat_id, whoop=whoop, strava=strava, reactor=reactor)
 
     log.info(f"Coach initialized for {athlete.name} | Race: {athlete.race_name} ({athlete.race_date})")
 
@@ -215,9 +224,39 @@ def main():
             id="activity_check",
         )
 
+        # Morning reactor — runs at 07:00 before the 08:30 check-in
+        if reactor:
+            async def run_morning_reactor(bot):
+                log.info("Running morning reactor (07:00)")
+                try:
+                    result = await reactor.run_morning()
+                    # Push critical alerts immediately
+                    critical = reactor.get_critical_alerts(result.get("alerts", []))
+                    for alert in critical:
+                        try:
+                            msg = reactor.format_alert_message(alert)
+                            await bot.send_message(
+                                chat_id=app_cfg.telegram_chat_id,
+                                text=msg,
+                                parse_mode="Markdown",
+                            )
+                            reactor.mark_alert_pushed(alert)
+                            log.info("Pushed critical alert: %s", alert.get("title"))
+                        except Exception as exc:
+                            log.error("Failed to push alert: %s", exc)
+                except Exception as exc:
+                    log.error("Morning reactor failed: %s", exc)
+
+            scheduler.add_job(
+                run_morning_reactor,
+                CronTrigger(hour=7, minute=0, timezone=TZ),
+                args=[application.bot],
+                id="morning_reactor",
+            )
+
         scheduler.start()
         log.info(
-            "Scheduler started — check-ins 8:30/13:00/22:00 + Sunday report "
+            "Scheduler started — reactor 07:00 + check-ins 8:30/13:00/22:00 + Sunday report "
             "+ Monday retrain + activity notifications every 5min (Europe/Paris)"
         )
 

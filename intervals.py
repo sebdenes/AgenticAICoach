@@ -30,6 +30,12 @@ class IntervalsClient:
             r.raise_for_status()
             return r.json()
 
+    async def _put(self, path: str, data: dict):
+        async with httpx.AsyncClient(timeout=15) as c:
+            r = await c.put(f"{self.base}/{path}", auth=self.auth, json=data)
+            r.raise_for_status()
+            return r.json()
+
     async def _delete(self, path: str):
         async with httpx.AsyncClient(timeout=15) as c:
             r = await c.delete(f"{self.base}/{path}", auth=self.auth)
@@ -39,6 +45,10 @@ class IntervalsClient:
     async def create_event(self, event: dict):
         """Create a calendar event on Intervals.icu."""
         return await self._post("events", event)
+
+    async def update_event(self, event_id: int, updates: dict):
+        """Update an existing calendar event on Intervals.icu (partial update)."""
+        return await self._put(f"events/{event_id}", updates)
 
     async def delete_event(self, event_id: int):
         """Delete a calendar event from Intervals.icu."""
