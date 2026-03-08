@@ -203,14 +203,14 @@ class CoachTools:
         return {"days": days, "count": len(w), "records": w}
 
     async def _tool_get_activities(self, days: int = 7, activity_type: str = None) -> dict:
-        # Allow up to 10 years — Strava DB history (sync_all_history) covers the full range.
-        # Intervals.icu is still capped at 90 days via its own client.
+        # Allow up to 10 years — Strava DB history covers the full range.
+        # Intervals.icu is capped at 90 days; used for TSS enrichment only.
         days = max(1, min(days, 3650))
 
-        # Primary source: Intervals.icu (has TSS / training load, capped at 90 days)
+        # Intervals.icu: capped at 90 days — source of TSS/IF/NP analytics metrics
         intervals_acts = await self.iv.activities(days=min(days, 90))
 
-        # Supplement: Strava fills gaps when Intervals hasn't synced yet
+        # Strava: primary source (real-time, full history from local DB via activities())
         strava_acts = []
         if self.strava and self.strava.is_authenticated:
             try:
@@ -218,26 +218,43 @@ class CoachTools:
             except Exception as exc:
                 log.warning("Strava fetch skipped: %s", exc)
 
-        # Dedup: (date, sport) from Intervals wins; add Strava-only activities
-        intervals_keys = {
-            (a.get("start_date_local", "")[:10], (a.get("type") or "").lower())
-            for a in intervals_acts
-        }
-        for sa in strava_acts:
-            key = (
-                sa.get("start_date_local", "")[:10],
-                (sa.get("type") or "").lower(),
-            )
-            if key not in intervals_keys:
-                intervals_acts.append(sa)   # already normalized in StravaClient
+        # Build Intervals lookup by (date, sport_lower) for TSS enrichment
+        intervals_lookup: dict = {}
+        for a in intervals_acts:
+            key = ((a.get("start_date_local") or "")[:10], (a.get("type") or "").lower())
+            intervals_lookup[key] = a
 
-        all_acts = intervals_acts
+        merged: list = []
+        seen_keys: set = set()
+
+        # Strava activities as base, enriched with Intervals TSS/IF/NP where matched
+        for sa in strava_acts:
+            key = ((sa.get("start_date_local") or "")[:10], (sa.get("type") or "").lower())
+            seen_keys.add(key)
+            iv = intervals_lookup.get(key, {})
+            record = dict(sa)
+            if iv:
+                record["icu_training_load"]      = iv.get("icu_training_load")
+                record["icu_intensity"]          = iv.get("icu_intensity")
+                record["icu_weighted_avg_watts"] = iv.get("icu_weighted_avg_watts")
+                record["_source"] = "strava+intervals"
+            else:
+                record["_source"] = "strava"
+            merged.append(record)
+
+        # Intervals-only activities (no Strava match) — virtual rides, older history, etc.
+        for ia in intervals_acts:
+            key = ((ia.get("start_date_local") or "")[:10], (ia.get("type") or "").lower())
+            if key not in seen_keys:
+                ia["_source"] = "intervals"
+                merged.append(ia)
+
         if activity_type:
-            all_acts = [
-                x for x in all_acts
-                if (x.get("type") or "").lower() == activity_type.lower()
+            merged = [
+                a for a in merged
+                if (a.get("type") or "").lower() == activity_type.lower()
             ]
-        return {"days": days, "count": len(all_acts), "activities": all_acts}
+        return {"days": days, "count": len(merged), "activities": merged}
 
     async def _tool_get_planned_events(self, days_ahead: int = 3) -> dict:
         days_ahead = max(1, min(days_ahead, 14))

@@ -316,6 +316,83 @@ async def _fetch_wellness_augmented(days: int) -> list:
     return wellness
 
 
+def _merge_activities(strava_acts: list, intervals_acts: list, whoop_workouts: list = None) -> list:
+    """Strava-primary merge with Intervals TSS enrichment and optional Whoop supplement.
+
+    Priority:
+      1. Strava (primary — richest activity metadata, real-time)
+      2. Intervals.icu (enriches Strava records with TSS/IF/NP; adds Intervals-only activities)
+      3. Whoop workouts (fills sessions tracked only on Whoop, not in Strava or Intervals)
+    """
+    # Step 1: Build Intervals lookup by (date, sport_lower) key
+    intervals_lookup: dict = {}
+    for a in intervals_acts:
+        key = (
+            (a.get("start_date_local") or a.get("date") or "")[:10],
+            (a.get("type") or "").lower(),
+        )
+        intervals_lookup[key] = a
+
+    merged: list = []
+    seen_keys: set = set()
+
+    # Step 2: Strava activities as base, enriched with Intervals TSS/IF/NP
+    for sa in strava_acts:
+        key = ((sa.get("start_date_local") or "")[:10], (sa.get("type") or "").lower())
+        seen_keys.add(key)
+        iv = intervals_lookup.get(key, {})
+        record = dict(sa)
+        if iv:
+            record["icu_training_load"]      = iv.get("icu_training_load")
+            record["icu_intensity"]          = iv.get("icu_intensity")
+            record["icu_weighted_avg_watts"] = iv.get("icu_weighted_avg_watts")
+            record["_source"] = "strava+intervals"
+        else:
+            record["_source"] = "strava"
+        merged.append(record)
+
+    # Step 3: Intervals-only activities (no Strava match) — virtual rides, older history, etc.
+    for ia in intervals_acts:
+        key = (
+            (ia.get("start_date_local") or ia.get("date") or "")[:10],
+            (ia.get("type") or "").lower(),
+        )
+        if key not in seen_keys:
+            record = dict(ia)
+            record["_source"] = "intervals"
+            merged.append(record)
+            seen_keys.add(key)
+
+    # Step 4: Whoop workouts not matched by Strava or Intervals
+    if whoop_workouts:
+        try:
+            from whoop import SPORT_MAP
+        except ImportError:
+            SPORT_MAP = {}
+        for w in whoop_workouts:
+            ws = w.get("score", {}) or {}
+            start = (w.get("start") or "")[:10]
+            sport_id = w.get("sport_id", -1)
+            sport_name = SPORT_MAP.get(sport_id, "Activity")
+            key = (start, sport_name.lower())
+            if key not in seen_keys:
+                merged.append({
+                    "type": sport_name,
+                    "name": sport_name,
+                    "start_date_local": w.get("start", ""),
+                    "moving_time": None,
+                    "distance": None,
+                    "average_heartrate": ws.get("average_heart_rate"),
+                    "max_heartrate": ws.get("max_heart_rate"),
+                    "average_watts": None,
+                    "icu_training_load": None,
+                    "whoop_strain": ws.get("strain"),
+                    "_source": "whoop",
+                })
+
+    return merged
+
+
 def _parse_wellness_for_modules(raw: list) -> list:
     """Normalise wellness rows from either Intervals.icu API or DB format.
 
@@ -419,18 +496,9 @@ async def dashboard_snapshot():
     whoop_recovery = await _fetch_whoop_recovery(7)
     whoop_cycles = await _fetch_whoop_cycles(7)
 
-    # Merge Strava DB into today's activities — same dedup logic as /api/activities
-    intervals_keys = {
-        ((a.get("start_date_local", a.get("date", "")) or "")[:10],
-         (a.get("type") or "").lower())
-        for a in intervals_activities
-    }
-    all_activities = list(intervals_activities)
-    if db:
-        for sa in db.get_strava_activities(days=7):
-            key = ((sa.get("start_date_local") or "")[:10], (sa.get("type") or "").lower())
-            if key not in intervals_keys:
-                all_activities.append(sa)
+    # Merge all activity sources — same logic as /api/activities
+    strava_acts_today = db.get_strava_activities(days=7) if db else []
+    all_activities = _merge_activities(strava_acts_today, intervals_activities, whoop_cycles)
 
     latest = _latest_wellness(wellness)
 
@@ -462,11 +530,12 @@ async def dashboard_snapshot():
             today_activities.append({
                 "type": a.get("type"),
                 "name": a.get("name", ""),
-                "duration_min": (a.get("moving_time", 0) or a.get("duration_secs", 0) or 0) // 60,
-                "distance_km": round((a.get("distance", 0) or a.get("distance_m", 0) or 0) / 1000, 1),
-                "tss": a.get("icu_training_load", 0) or a.get("tss", 0) or 0,
-                "avg_hr": a.get("average_heartrate") or a.get("avg_hr"),
-                "_source": a.get("_source", "intervals"),
+                "duration_min": (a.get("moving_time", 0) or 0) // 60,
+                "distance_km": round((a.get("distance", 0) or 0) / 1000, 1),
+                "tss": a.get("icu_training_load") or 0,
+                "avg_hr": a.get("average_heartrate"),
+                "whoop_strain": a.get("whoop_strain"),
+                "_source": a.get("_source", "unknown"),
             })
 
     # Today's planned events
@@ -486,7 +555,7 @@ async def dashboard_snapshot():
         try:
             alerts = generate_alerts(
                 wellness=wellness,
-                activities=activities,
+                activities=intervals_activities,
                 athlete_config=asdict(athlete_cfg) if athlete_cfg else {},
             )
         except Exception as exc:
@@ -564,47 +633,38 @@ async def wellness_history(days: int = Query(default=14, ge=1, le=365)):
 
 @app.get("/api/activities")
 async def activity_history(days: int = Query(default=14, ge=1, le=365)):
-    """Activity time-series merging Intervals.icu (primary) + Strava DB (fills sync gaps).
+    """Activity time-series: Strava primary, Intervals enriches with TSS/IF/NP, Whoop fills gaps.
 
-    Intervals.icu wins when both sources have the same activity (date+sport key).
-    Strava DB fills gaps for activities uploaded before Intervals.icu syncs them.
+    Strava is the primary source (richest real-time metadata). Each Strava activity is
+    enriched with Intervals.icu TSS (``icu_training_load``), Intensity Factor, and
+    Normalized Power where a matching record exists.  Intervals-only activities (e.g.
+    virtual rides) are appended.  Whoop workouts fill any remaining gaps.
     """
-    raw = await _fetch_intervals_activities(days)
+    strava_acts    = db.get_strava_activities(days=days)
+    intervals_acts = await _fetch_intervals_activities(min(days, 90))
+    whoop_workouts = await _fetch_whoop_cycles(days)
 
-    def _norm(a: dict, source: str) -> dict:
+    merged = _merge_activities(strava_acts, intervals_acts, whoop_workouts)
+
+    def _norm(a: dict) -> dict:
         return {
             "date": (a.get("start_date_local", a.get("date", "")) or "")[:10],
             "type": a.get("type"),
             "name": a.get("name", ""),
-            "tss": a.get("icu_training_load", 0) or a.get("tss", 0) or 0,
-            "duration_min": (a.get("moving_time", 0) or a.get("duration_secs", 0) or 0) // 60,
-            "distance_km": round((a.get("distance", 0) or a.get("distance_m", 0) or 0) / 1000, 1),
-            "avg_hr": a.get("average_heartrate") or a.get("avg_hr"),
-            "max_hr": a.get("max_heartrate") or a.get("max_hr"),
-            "avg_power": a.get("average_watts") or a.get("avg_power"),
-            "np": a.get("icu_weighted_avg_watts") or a.get("np"),
-            "intensity": a.get("icu_intensity") or a.get("intensity"),
-            "_source": source,
+            "tss": a.get("icu_training_load") or 0,
+            "duration_min": (a.get("moving_time", 0) or 0) // 60,
+            "distance_km": round((a.get("distance", 0) or 0) / 1000, 1),
+            "avg_hr": a.get("average_heartrate"),
+            "max_hr": a.get("max_heartrate"),
+            "avg_power": a.get("average_watts"),
+            "np": a.get("icu_weighted_avg_watts"),
+            "intensity": a.get("icu_intensity"),
+            "whoop_strain": a.get("whoop_strain"),
+            "elevation_m": a.get("total_elevation_gain"),
+            "_source": a.get("_source", "unknown"),
         }
 
-    result = [_norm(a, "intervals") for a in raw if a.get("type")]
-
-    # Dedup set: (date, sport_lower) from Intervals
-    intervals_keys = {
-        (a["date"], (a["type"] or "").lower()) for a in result
-    }
-
-    # Merge Strava DB for the same window — fills activities not yet synced
-    strava_acts = db.get_strava_activities(days=days)
-    for sa in strava_acts:
-        key = (
-            (sa.get("start_date_local") or "")[:10],
-            (sa.get("type") or "").lower(),
-        )
-        if key not in intervals_keys:
-            result.append(_norm(sa, "strava"))
-
-    # Sort newest first
+    result = [_norm(a) for a in merged if a.get("type")]
     result.sort(key=lambda x: x["date"], reverse=True)
     return result
 
