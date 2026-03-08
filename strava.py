@@ -53,6 +53,10 @@ class StravaClient:
 
     @property
     def is_authenticated(self) -> bool:
+        # Reload from DB if not yet in memory — catches the case where the
+        # dashboard completed OAuth after the bot process started.
+        if self._refresh_token is None:
+            self._load_tokens()
         return self._refresh_token is not None
 
     def get_auth_url(self) -> str:
