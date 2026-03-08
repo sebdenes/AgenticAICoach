@@ -148,6 +148,52 @@ TOOL_SCHEMAS = [
             "required": [],
         },
     },
+    {
+        "name": "create_workout",
+        "description": (
+            "Create a structured workout on the Intervals.icu calendar. "
+            "The workout_text must use intervals.icu text format. "
+            "First paragraph = description. Subsequent paragraphs = step groups. "
+            "Steps start with '- '. Add 'Nx' after group header for repeats.\n\n"
+            "DURATION: 30s, 10m, 1m30s, 1h, 1km, 400mtr\n"
+            "CYCLING INTENSITY: 80% (FTP), 200w, Z2, Ramp 60-90%, freeride\n"
+            "RUNNING INTENSITY: Z2 Pace, 4:30/km Pace, 80% Pace, Z3 HR\n"
+            "CADENCE: append 90rpm or 85-95rpm\n\n"
+            "Example cycling:\n"
+            "Sweet spot training.\n\nWarmup\n- 15m Ramp 40-65% 90rpm\n\n"
+            "Sweet spot 3x\n- 10m 88-93%\n- 5m 55%\n\nCooldown\n- 10m Ramp 55-40%\n\n"
+            "Example running:\n"
+            "Marathon pace workout.\n\nWarmup\n- 2km 5:30/km Pace\n\n"
+            "Goal pace 4x\n- 2km 4:16/km Pace\n- 500mtr 5:30/km Pace\n\n"
+            "Cooldown\n- 1km 6:00/km Pace"
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "date": {
+                    "type": "string",
+                    "description": "Date for the workout in YYYY-MM-DD format.",
+                },
+                "sport": {
+                    "type": "string",
+                    "enum": ["Run", "Ride", "Swim", "Workout"],
+                    "description": "Sport type.",
+                },
+                "name": {
+                    "type": "string",
+                    "description": "Short workout name (e.g. 'VO2max Intervals', 'Easy Run', 'Sweet Spot').",
+                },
+                "workout_text": {
+                    "type": "string",
+                    "description": (
+                        "Full workout definition in intervals.icu text format. "
+                        "First paragraph is the description, then step groups."
+                    ),
+                },
+            },
+            "required": ["date", "sport", "name", "workout_text"],
+        },
+    },
 ]
 
 
@@ -560,6 +606,53 @@ class CoachTools:
             "days_analyzed": days,
             "patterns": patterns,
         }
+
+    # ── Workout creation tool ─────────────────────────────────────────────────
+
+    async def _tool_create_workout(
+        self, date: str, sport: str, name: str, workout_text: str
+    ) -> dict:
+        """Create a structured workout on the Intervals.icu calendar.
+
+        The workout_text must use intervals.icu text format.
+        """
+        if not self.iv:
+            return {"created": False, "error": "Intervals.icu client not available"}
+
+        # Map sport names to Intervals.icu category/type
+        sport_map = {
+            "Run": ("WORKOUT", "Run"),
+            "Ride": ("WORKOUT", "Ride"),
+            "Swim": ("WORKOUT", "Swim"),
+            "Workout": ("WORKOUT", "Workout"),
+        }
+        category, event_type = sport_map.get(sport, ("WORKOUT", sport))
+
+        event = {
+            "category": category,
+            "start_date_local": f"{date}T06:00:00",
+            "type": event_type,
+            "name": name,
+            "description": workout_text,
+        }
+
+        try:
+            result = await self.iv.create_event(event)
+            event_id = result.get("id") if isinstance(result, dict) else None
+            log.info(
+                "Created workout: %s (%s) on %s — event_id=%s",
+                name, sport, date, event_id,
+            )
+            return {
+                "created": True,
+                "event_id": event_id,
+                "date": date,
+                "sport": sport,
+                "name": name,
+            }
+        except Exception as exc:
+            log.error("Failed to create workout: %s", exc)
+            return {"created": False, "error": str(exc)}
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────

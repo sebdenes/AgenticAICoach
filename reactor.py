@@ -34,12 +34,14 @@ class CoachingReactor:
         athlete: "AthleteConfig",
         whoop=None,
         strava=None,
+        state_machine=None,
     ):
         self.iv = iv
         self.db = db
         self.athlete = athlete
         self.whoop = whoop
         self.strava = strava
+        self.state_machine = state_machine
 
     # ------------------------------------------------------------------
     # Morning reactor — runs at 07:00 before the 08:30 check-in
@@ -84,7 +86,35 @@ class CoachingReactor:
             # 5. Weekly load summary
             result["weekly_load"] = self._weekly_load(activities)
 
-            # 6. Build brief for check-in
+            # 6. Evaluate training phase state machine
+            if self.state_machine:
+                recovery_score = 70  # default
+                if adaptation:
+                    # Infer recovery score from adaptation action
+                    action = adaptation.get("action", "proceed")
+                    if action == "rest":
+                        recovery_score = 25
+                    elif action == "reduce":
+                        recovery_score = 40
+                    elif action == "swap":
+                        recovery_score = 50
+
+                race_countdown = None
+                if getattr(self.athlete, "race_date", None):
+                    try:
+                        days_to = (date.fromisoformat(self.athlete.race_date) - date.today()).days
+                        race_countdown = days_to
+                    except ValueError:
+                        pass
+
+                state_result = self.state_machine.evaluate(
+                    alerts=result["alerts"],
+                    recovery_score=recovery_score,
+                    race_countdown=race_countdown,
+                )
+                result["state"] = state_result
+
+            # 7. Build brief for check-in
             result["brief"] = self._build_morning_brief(result)
 
             # Store for check-in use
@@ -489,6 +519,17 @@ class CoachingReactor:
                 lines.append(
                     f"**Weekly load:** {wl['total_tss']:.0f} TSS | "
                     f"{wl['total_duration_min']}min | {wl['activity_count']} sessions"
+                )
+            lines.append("")
+
+        # Training phase (state machine)
+        if self.state_machine:
+            lines.append(self.state_machine.format_state_brief())
+            state_result = reactor_result.get("state", {})
+            if state_result.get("changed"):
+                lines.append(
+                    f"  *State changed:* {state_result['previous']} -> {state_result['state']} "
+                    f"({state_result.get('reason', '')})"
                 )
             lines.append("")
 

@@ -280,6 +280,24 @@ class VectorStore:
 
         return self._collection.count()
 
+    def get_or_create_collection(self, name: str):
+        """Get or create a named ChromaDB collection.
+
+        Returns the collection object, or None if ChromaDB is not available.
+        Useful for creating additional collections (e.g., athlete_memories)
+        alongside the default knowledge_rules collection.
+        """
+        if not self._available:
+            return None
+        try:
+            return self._client.get_or_create_collection(
+                name=name,
+                metadata={"hnsw:space": "cosine"},
+            )
+        except Exception as exc:
+            log.warning("Failed to get/create collection '%s': %s", name, exc)
+            return None
+
     def count(self) -> int:
         """Return number of indexed documents."""
         if not self._available:

@@ -24,6 +24,76 @@ MODEL = "claude-sonnet-4-20250514"
 MAX_TOKENS = 2000
 
 
+# ── Reusable tool-use loop ────────────────────────────────────────────────────
+
+async def run_tool_loop(
+    client,
+    model: str,
+    system: str,
+    tools,  # CoachTools instance
+    tool_schemas: list[dict],
+    messages: list[dict],
+    max_iterations: int = MAX_TOOL_ITERATIONS,
+    max_tokens: int = MAX_TOKENS,
+) -> str:
+    """Run the agentic tool-use loop and return final text.
+
+    Shared by CoachingEngine and specialized agents (agents.py).
+    """
+    response = None
+    for iteration in range(max_iterations):
+        response = client.messages.create(
+            model=model,
+            max_tokens=max_tokens,
+            system=system,
+            tools=tool_schemas,
+            messages=messages,
+        )
+        log.debug(
+            "Tool loop iteration %d: stop_reason=%s tool_calls=%d",
+            iteration + 1,
+            response.stop_reason,
+            sum(1 for b in response.content if b.type == "tool_use"),
+        )
+
+        if response.stop_reason != "tool_use":
+            break
+
+        tool_uses = [b for b in response.content if b.type == "tool_use"]
+        results = await asyncio.gather(
+            *[tools.execute(tu.name, tu.input) for tu in tool_uses]
+        )
+
+        for tu, result in zip(tool_uses, results):
+            log.info("Tool call: %s(%s) -> %d chars", tu.name, tu.input, len(result))
+
+        messages.append({"role": "assistant", "content": response.content})
+        messages.append(
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": tu.id,
+                        "content": result,
+                    }
+                    for tu, result in zip(tool_uses, results)
+                ],
+            }
+        )
+    else:
+        log.warning("Tool-use loop hit max iterations (%d)", max_iterations)
+
+    if response is None:
+        return ""
+
+    final_text = ""
+    for block in response.content:
+        if hasattr(block, "text"):
+            final_text += block.text
+    return final_text
+
+
 class CoachingEngine:
     def __init__(
         self,
@@ -182,68 +252,14 @@ class CoachingEngine:
         history = self._load_history()
         messages = history + [{"role": "user", "content": initial_content}]
 
-        response = None
-        for iteration in range(MAX_TOOL_ITERATIONS):
-            response = self.client.messages.create(
-                model=MODEL,
-                max_tokens=MAX_TOKENS,
-                system=self._system,
-                tools=TOOL_SCHEMAS,
-                messages=messages,
-            )
-            log.debug(
-                "Engine iteration %d: stop_reason=%s tool_calls=%d",
-                iteration + 1,
-                response.stop_reason,
-                sum(1 for b in response.content if b.type == "tool_use"),
-            )
-
-            if response.stop_reason != "tool_use":
-                break
-
-            # Extract all tool_use blocks from this turn
-            tool_uses = [b for b in response.content if b.type == "tool_use"]
-
-            # Execute all tool calls in parallel
-            results = await asyncio.gather(
-                *[self.tools.execute(tu.name, tu.input) for tu in tool_uses]
-            )
-
-            # Log each tool call for observability
-            for tu, result in zip(tool_uses, results):
-                log.info(
-                    "Tool call: %s(%s) -> %d chars",
-                    tu.name,
-                    tu.input,
-                    len(result),
-                )
-
-            # Append assistant turn + all tool results, then continue the loop
-            messages.append({"role": "assistant", "content": response.content})
-            messages.append(
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "tool_result",
-                            "tool_use_id": tu.id,
-                            "content": result,
-                        }
-                        for tu, result in zip(tool_uses, results)
-                    ],
-                }
-            )
-        else:
-            log.warning("Tool-use loop hit max iterations (%d)", MAX_TOOL_ITERATIONS)
-
-        if response is None:
-            return "Sorry, I could not generate a response."
-
-        # Extract the final text content from Claude's last response
-        final_text = ""
-        for block in response.content:
-            if hasattr(block, "text"):
-                final_text += block.text
+        final_text = await run_tool_loop(
+            client=self.client,
+            model=MODEL,
+            system=self._system,
+            tools=self.tools,
+            tool_schemas=TOOL_SCHEMAS,
+            messages=messages,
+        )
 
         if not final_text:
             final_text = (

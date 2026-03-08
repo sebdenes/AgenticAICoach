@@ -145,16 +145,75 @@ def main():
         strava=strava,
     )
 
+    # ── Phase 2: Multi-agent architecture ─────────────────────────────────────
+
+    # Coaching state machine
+    state_machine = None
+    try:
+        from coaching_state_machine import CoachingStateMachine
+        state_machine = CoachingStateMachine(db, athlete)
+        log.info(f"State machine initialized — current phase: {state_machine.current_state}")
+    except Exception as e:
+        log.warning(f"State machine init failed: {e}")
+
+    # Long-term athlete memory
+    _memory = None
+    try:
+        from memory import AthleteMemory
+        # Reuse the vector store from the knowledge base (same ChromaDB instance)
+        _vector_store = None
+        if _kb:
+            try:
+                _vector_store = _kb.vector_store
+            except AttributeError:
+                from modules.vector_store import VectorStore
+                _vector_store = VectorStore()
+        else:
+            from modules.vector_store import VectorStore
+            _vector_store = VectorStore()
+        _memory = AthleteMemory(db, _vector_store)
+        log.info(f"Athlete memory initialized — {_memory.count()} memories stored")
+    except Exception as e:
+        log.warning(f"Athlete memory init failed: {e}")
+
+    # Agent orchestrator (drop-in replacement for engine)
+    orchestrator = None
+    try:
+        from orchestrator import AgentOrchestrator
+        from engine_tools import CoachTools
+        tools = CoachTools(
+            iv=iv, db=db, athlete=athlete, whoop=whoop,
+            weather_provider=_weather_provider, weather_engine=_weather_engine,
+            rag=_rag, simulator=_simulator, strava=strava,
+        )
+        orchestrator = AgentOrchestrator(
+            api_key=app_cfg.anthropic_api_key,
+            athlete=athlete,
+            db=db,
+            tools=tools,
+            memory=_memory,
+            state_machine=state_machine,
+        )
+        log.info("Agent orchestrator initialized (3 agents: daily_coach, analysis, planning)")
+    except Exception as e:
+        log.warning(f"Orchestrator init failed — falling back to single engine: {e}")
+
+    # Use orchestrator if available, otherwise fall back to single engine
+    active_engine = orchestrator if orchestrator else engine
+
     # Initialize autonomous coaching reactor
     reactor = None
     try:
         from reactor import CoachingReactor
-        reactor = CoachingReactor(iv=iv, db=db, athlete=athlete, whoop=whoop, strava=strava)
+        reactor = CoachingReactor(
+            iv=iv, db=db, athlete=athlete, whoop=whoop, strava=strava,
+            state_machine=state_machine,
+        )
         log.info("Coaching reactor initialized")
     except Exception as e:
         log.warning(f"Reactor init failed: {e}")
 
-    hdlrs = Handlers(iv, engine, db, athlete, app_cfg.telegram_chat_id, whoop=whoop, strava=strava, reactor=reactor)
+    hdlrs = Handlers(iv, active_engine, db, athlete, app_cfg.telegram_chat_id, whoop=whoop, strava=strava, reactor=reactor)
 
     log.info(f"Coach initialized for {athlete.name} | Race: {athlete.race_name} ({athlete.race_date})")
 

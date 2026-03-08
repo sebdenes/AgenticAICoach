@@ -409,6 +409,61 @@ class Database:
                  prediction_json, actual_value),
             )
 
+    # ── Athlete Memory ─────────────────────────────────────
+
+    def store_memory(self, memory_type: str, content: str,
+                     embedding_id: str = None, importance: float = 0.5) -> int:
+        """Store a long-term athlete memory. Returns the new row ID."""
+        with self._conn() as conn:
+            cursor = conn.execute(
+                "INSERT INTO athlete_memory "
+                "(memory_type, content, embedding_id, importance, created_at) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (memory_type, content, embedding_id, importance,
+                 datetime.now().isoformat()),
+            )
+            return cursor.lastrowid
+
+    def get_memories(self, memory_type: str = None,
+                     min_importance: float = 0.0, limit: int = 20) -> list[dict]:
+        """Retrieve athlete memories, optionally filtered by type and importance."""
+        with self._conn() as conn:
+            if memory_type:
+                rows = conn.execute(
+                    "SELECT * FROM athlete_memory "
+                    "WHERE memory_type = ? AND importance >= ? "
+                    "ORDER BY importance DESC, created_at DESC LIMIT ?",
+                    (memory_type, min_importance, limit),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT * FROM athlete_memory "
+                    "WHERE importance >= ? "
+                    "ORDER BY importance DESC, created_at DESC LIMIT ?",
+                    (min_importance, limit),
+                ).fetchall()
+        return [dict(r) for r in rows]
+
+    def update_memory_access(self, memory_id: int):
+        """Bump last_accessed and access_count for a retrieved memory."""
+        with self._conn() as conn:
+            conn.execute(
+                "UPDATE athlete_memory SET last_accessed = ?, "
+                "access_count = access_count + 1 WHERE id = ?",
+                (datetime.now().isoformat(), memory_id),
+            )
+
+    def decay_memories(self, days_old: int = 30, decay_factor: float = 0.95):
+        """Reduce importance of old, unaccessed memories."""
+        cutoff = (datetime.now() - timedelta(days=days_old)).isoformat()
+        with self._conn() as conn:
+            conn.execute(
+                "UPDATE athlete_memory SET importance = importance * ? "
+                "WHERE (last_accessed IS NULL OR last_accessed < ?) "
+                "AND created_at < ? AND importance > 0.1",
+                (decay_factor, cutoff, cutoff),
+            )
+
 
 # ── Schema ────────────────────────────────────────────────
 
