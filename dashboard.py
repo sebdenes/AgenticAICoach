@@ -498,13 +498,15 @@ async def wellness_history(days: int = Query(default=14, ge=1, le=365)):
 
 @app.get("/api/activities")
 async def activity_history(days: int = Query(default=14, ge=1, le=365)):
-    """Activity time-series with training metrics."""
+    """Activity time-series merging Intervals.icu (primary) + Strava DB (fills sync gaps).
+
+    Intervals.icu wins when both sources have the same activity (date+sport key).
+    Strava DB fills gaps for activities uploaded before Intervals.icu syncs them.
+    """
     raw = await _fetch_intervals_activities(days)
-    result = []
-    for a in raw:
-        if not a.get("type"):
-            continue
-        result.append({
+
+    def _norm(a: dict, source: str) -> dict:
+        return {
             "date": (a.get("start_date_local", a.get("date", "")) or "")[:10],
             "type": a.get("type"),
             "name": a.get("name", ""),
@@ -516,7 +518,28 @@ async def activity_history(days: int = Query(default=14, ge=1, le=365)):
             "avg_power": a.get("average_watts") or a.get("avg_power"),
             "np": a.get("icu_weighted_avg_watts") or a.get("np"),
             "intensity": a.get("icu_intensity") or a.get("intensity"),
-        })
+            "_source": source,
+        }
+
+    result = [_norm(a, "intervals") for a in raw if a.get("type")]
+
+    # Dedup set: (date, sport_lower) from Intervals
+    intervals_keys = {
+        (a["date"], (a["type"] or "").lower()) for a in result
+    }
+
+    # Merge Strava DB for the same window — fills activities not yet synced
+    strava_acts = db.get_strava_activities(days=days)
+    for sa in strava_acts:
+        key = (
+            (sa.get("start_date_local") or "")[:10],
+            (sa.get("type") or "").lower(),
+        )
+        if key not in intervals_keys:
+            result.append(_norm(sa, "strava"))
+
+    # Sort newest first
+    result.sort(key=lambda x: x["date"], reverse=True)
     return result
 
 
