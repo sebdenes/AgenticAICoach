@@ -142,15 +142,39 @@ class CoachingEngine:
         self,
         user_message: str,
         checkin_type: str = None,
+        image_data: dict = None,
         # Legacy params kept for backward compat — ignored, tools fetch data now
         data_context: str = "",
         module_context: str = "",
         weather_context: str = "",
         science_context: str = "",
     ) -> str:
-        """Run the agentic tool-use loop and return the final coaching response."""
+        """Run the agentic tool-use loop and return the final coaching response.
+
+        Args:
+            user_message: The athlete's text message or voice transcript.
+            checkin_type: If set, prepends the check-in protocol prompt.
+            image_data: Optional dict {"data": b64_str, "media_type": "image/jpeg"}
+                        for multimodal (photo) messages. The image is sent to Claude
+                        vision but NOT persisted in history to avoid DB bloat.
+        """
         # Build the initial user turn (prepend check-in protocol if applicable)
-        initial_content = _make_initial_message(user_message, checkin_type, PROMPTS_DIR)
+        text_content = _make_initial_message(user_message, checkin_type, PROMPTS_DIR)
+
+        if image_data:
+            initial_content = [
+                {
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": image_data.get("media_type", "image/jpeg"),
+                        "data": image_data["data"],
+                    },
+                },
+                {"type": "text", "text": text_content},
+            ]
+        else:
+            initial_content = text_content
 
         # Load history and append the new turn
         history = self._load_history()

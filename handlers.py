@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import base64
 import logging
 import asyncio
 import tempfile
@@ -91,6 +92,7 @@ class Handlers:
         app.add_handler(CommandHandler("help", self.cmd_help))
         app.add_handler(CallbackQueryHandler(self.on_callback))
         app.add_handler(MessageHandler(filters.VOICE | filters.AUDIO, self.on_voice))
+        app.add_handler(MessageHandler(filters.PHOTO, self.on_photo))
         app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.on_message))
 
     # ── Helper: gather data ───────────────────────────────────
@@ -889,7 +891,7 @@ class Handlers:
             import subprocess
             # Try local whisper if installed (pip install openai-whisper)
             result = subprocess.run(
-                ["whisper", file_path, "--model", "base", "--output_format", "txt", "--language", "en"],
+                ["whisper", file_path, "--model", "base", "--output_format", "txt"],
                 capture_output=True, text=True, timeout=30,
             )
             if result.returncode == 0:
@@ -925,6 +927,39 @@ class Handlers:
             pass
 
         return None
+
+    # ── Photos / Images ────────────────────────────────────────
+
+    async def on_photo(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        """Handle photo messages — pass to Claude vision with optional caption."""
+        await self._typing(update)
+        try:
+            # Telegram delivers photos at multiple sizes; take the largest
+            photo = update.message.photo[-1]
+            file = await ctx.bot.get_file(photo.file_id)
+
+            buf = io.BytesIO()
+            await file.download_to_memory(buf)
+            img_b64 = base64.b64encode(buf.getvalue()).decode()
+
+            # Use caption as the question; fall back to a sensible default
+            caption = (
+                update.message.caption
+                or "Please analyze this image. If it's a training activity or Strava "
+                   "screenshot, give me coaching insights about the workout."
+            )
+
+            text = await self.engine.respond(
+                caption,
+                image_data={"data": img_b64, "media_type": "image/jpeg"},
+            )
+            await self._safe_reply(update, text)
+
+        except Exception as e:
+            log.error("Photo processing error: %s", e)
+            await update.message.reply_text(
+                "Could not process image. Try describing it in text instead."
+            )
 
     # ── Free-form Messages ────────────────────────────────────
 
