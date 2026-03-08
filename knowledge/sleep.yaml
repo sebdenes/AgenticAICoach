@@ -1,0 +1,110 @@
+category: sleep
+version: "1.0"
+rules:
+  - id: sleep_extension
+    principle: "Extending sleep to 10h/night for 5-7 weeks improves sprint times, reaction time, and mood in athletes"
+    application: "Athletes sleeping <7h should prioritize sleep extension before any other recovery intervention"
+    conditions: "Athlete with chronic sleep restriction (<7h/night average)"
+    citation: "Mah CD et al. (2011) The Effects of Sleep Extension on the Athletic Performance of Collegiate Basketball Players. Sleep."
+    confidence: high
+    tags: [sleep_extension, performance, mood, reaction_time]
+    sport_specific: null
+
+  - id: sleep_debt_accumulation
+    principle: "Cognitive and physical performance degrades cumulatively with chronic sleep restriction"
+    application: "Track cumulative sleep debt (target - actual) over 7 days. Debt >5h/week impairs decision-making and endurance"
+    conditions: "Sleep data available for 7+ consecutive days"
+    citation: "Van Dongen HPA et al. (2003) The Cumulative Cost of Additional Wakefulness. Sleep."
+    confidence: high
+    tags: [sleep_debt, cumulative, cognitive, performance_degradation]
+    sport_specific: null
+
+  - id: circadian_training_timing
+    principle: "Afternoon (14:00-18:00) is optimal for high-intensity training due to peak body temperature and reaction time"
+    application: "Schedule key sessions in afternoon when possible. Morning sessions may need extended warm-up"
+    conditions: "Flexible training schedule available"
+    citation: "Chtourou H & Souissi N (2012) The Effect of Training at a Specific Time of Day. J Strength Cond Res."
+    confidence: medium
+    tags: [circadian, timing, afternoon, body_temperature]
+    sport_specific: null
+
+  - id: napping_strategy
+    principle: "20-30min naps improve alertness and performance without sleep inertia; >30min may cause grogginess"
+    application: "If sleep debt exists, prescribe 20-30min nap between 13:00-15:00. Avoid naps after 16:00"
+    conditions: "Athlete has accumulated sleep debt and opportunity for daytime rest"
+    citation: "Waterhouse J et al. (2007) The Role of a Short Post-Lunch Nap in Improving Cognitive, Motor, and Sprint Performance. J Sports Sci."
+    confidence: high
+    tags: [napping, alertness, sleep_inertia, recovery]
+    sport_specific: null
+
+  - id: sleep_hygiene_athletes
+    principle: "Consistent sleep/wake times, cool room (18-20°C), and dark environment improve sleep quality"
+    application: "Set consistent bedtime ±30min. Room temp 18-20°C. Blackout curtains. No screens 30min before bed"
+    conditions: "Always applicable as baseline sleep recommendations"
+    citation: "Halson SL (2014) Sleep in Elite Athletes and Nutritional Interventions to Enhance Sleep. Sports Med."
+    confidence: high
+    tags: [sleep_hygiene, routine, environment, temperature]
+    sport_specific: null
+
+  - id: blue_light_melatonin
+    principle: "Evening blue light exposure suppresses melatonin onset by up to 90 minutes"
+    application: "Recommend blue light blocking glasses or Night Shift mode 2h before target bedtime"
+    conditions: "Athlete uses screens in the evening"
+    citation: "Gooley JJ et al. (2011) Exposure to Room Light before Bedtime Suppresses Melatonin Onset. J Clin Endocrinol Metab."
+    confidence: high
+    tags: [blue_light, melatonin, screens, circadian]
+    sport_specific: null
+
+  - id: sleep_injury_risk
+    principle: "Athletes sleeping <8h are 1.7x more likely to sustain injury than those sleeping >8h"
+    application: "Flag athletes with <6h average as high injury risk. Include sleep in injury risk assessment"
+    conditions: "Monitoring athlete injury risk alongside training load"
+    citation: "Milewski MD et al. (2014) Chronic Lack of Sleep Is Associated with Increased Sports Injuries. J Pediatr Orthop."
+    confidence: high
+    tags: [sleep, injury_risk, chronic_restriction]
+    sport_specific: null
+
+  - id: alcohol_sleep_quality
+    principle: "Alcohol disrupts REM sleep and reduces sleep quality even when total duration is maintained"
+    application: "Advise no alcohol within 3h of bedtime. Flag if sleep quality drops without other explanations"
+    conditions: "Investigating poor sleep quality despite adequate duration"
+    citation: "Ebrahim IO et al. (2013) Alcohol and Sleep I: Effects on Normal Sleep. Alcohol Clin Exp Res."
+    confidence: high
+    tags: [alcohol, rem_sleep, sleep_quality, disruption]
+    sport_specific: null
+
+  - id: caffeine_half_life
+    principle: "Caffeine has a half-life of 5-6 hours; afternoon caffeine significantly disrupts sleep onset"
+    application: "No caffeine after 14:00 (or 8h before target bedtime). Morning caffeine is fine for performance"
+    conditions: "Athlete consuming caffeine; sleep onset difficulties reported"
+    citation: "Drake C et al. (2013) Caffeine Effects on Sleep Taken 0, 3, or 6 Hours before Going to Bed. J Clin Sleep Med."
+    confidence: high
+    tags: [caffeine, half_life, sleep_onset, timing]
+    sport_specific: null
+
+  - id: sleep_stages_importance
+    principle: "Deep sleep (SWS) is critical for physical recovery; REM for cognitive and motor learning"
+    application: "Monitor deep sleep percentage (target >15% of total). Low deep sleep may indicate overtraining"
+    conditions: "Wearable provides sleep stage data"
+    citation: "Dattilo M et al. (2011) Sleep and Muscle Recovery: Endocrinological and Molecular Basis. Med Hypotheses."
+    confidence: medium
+    tags: [deep_sleep, rem, stages, physical_recovery, motor_learning]
+    sport_specific: null
+
+  - id: travel_jet_lag
+    principle: "Jet lag impairs performance for approximately 1 day per timezone crossed"
+    application: "Allow 1 day of adjustment per timezone for races. Pre-shift sleep schedule if possible"
+    conditions: "Travel crossing 2+ timezones before competition"
+    citation: "Reilly T et al. (2007) Jet Lag and Air Travel. J Sports Sci."
+    confidence: high
+    tags: [jet_lag, travel, timezone, race_preparation]
+    sport_specific: null
+
+  - id: sleep_consistency
+    principle: "Irregular sleep schedules impair performance more than total sleep duration alone"
+    application: "Target sleep/wake times within ±30min daily, including weekends. Flag variability >60min"
+    conditions: "Sleep timing data available from wearable"
+    citation: "Fullagar HH et al. (2015) Sleep and Athletic Performance. Sports Med."
+    confidence: high
+    tags: [sleep_consistency, regularity, timing, schedule]
+    sport_specific: null

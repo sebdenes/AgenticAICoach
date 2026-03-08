@@ -1,0 +1,110 @@
+category: nutrition
+version: "1.0"
+rules:
+  - id: carb_periodization
+    principle: "Matching carbohydrate intake to training demands optimizes adaptation and performance"
+    application: "High carb (8-12g/kg) on hard training days, moderate (5-7g/kg) on easy days, low (<3g/kg) for select easy sessions"
+    conditions: "Training load data available to classify day intensity"
+    citation: "Impey SG et al. (2018) Fuel for the Work Required: A Theoretical Framework for Carbohydrate Periodization. Sports Med."
+    confidence: high
+    tags: [carbohydrate, periodization, fueling, training_adaptation]
+    sport_specific: null
+
+  - id: protein_distribution
+    principle: "Distributing protein intake (0.3-0.5g/kg per meal, 4-5x/day) maximises muscle protein synthesis"
+    application: "Target 30-40g protein per meal, 4-5 meals/day. Include 40g casein-rich protein before bed"
+    conditions: "Athlete training for both endurance and strength adaptation"
+    citation: "Schoenfeld BJ & Aragon AA (2018) How Much Protein Can the Body Use in a Single Meal. J Int Soc Sports Nutr."
+    confidence: high
+    tags: [protein, distribution, muscle_protein_synthesis, meals]
+    sport_specific: null
+
+  - id: pre_exercise_fueling
+    principle: "Consuming 1-4g/kg carbohydrate 1-4h before exercise improves performance in sessions >60min"
+    application: "Pre-workout meal 2-3h before: 1-2g/kg carbs + moderate protein. Snack 30-60min before if needed"
+    conditions: "Training session >60 minutes duration"
+    citation: "Kerksick CM et al. (2017) ISSN Exercise and Sports Nutrition Review Update. J Int Soc Sports Nutr."
+    confidence: high
+    tags: [pre_exercise, carbohydrate, timing, performance]
+    sport_specific: null
+
+  - id: during_exercise_carbs
+    principle: "Ingesting 60-90g/h carbohydrate during exercise >2.5h maintains performance and delays fatigue"
+    application: "For sessions >90min: 30-60g/h. For sessions >2.5h: up to 90g/h using glucose:fructose mix (2:1 ratio)"
+    conditions: "Endurance sessions >90 minutes"
+    citation: "Jeukendrup AE (2014) A Step Towards Personalized Sports Nutrition. Sports Med."
+    confidence: high
+    tags: [during_exercise, carbohydrate, fueling, endurance, glucose_fructose]
+    sport_specific: null
+
+  - id: recovery_nutrition_window
+    principle: "Post-exercise protein + carbohydrate within 2h maximises glycogen resynthesis and repair"
+    application: "Recovery meal within 30-60min: 0.3g/kg protein + 1-1.2g/kg carbs. Critical if <8h between sessions"
+    conditions: "Post-training, especially with another session within 24h"
+    citation: "Beelen M et al. (2010) Nutritional Strategies to Promote Postexercise Recovery. Int J Sport Nutr Exerc Metab."
+    confidence: high
+    tags: [recovery, nutrition_window, glycogen, protein, post_exercise]
+    sport_specific: null
+
+  - id: hydration_guidelines
+    principle: "2% body mass dehydration impairs aerobic performance; hyponatremia from overdrinking is also dangerous"
+    application: "Drink to thirst during exercise. Pre-weigh to monitor losses. Target <2% body mass loss per session"
+    conditions: "All training sessions, especially in heat"
+    citation: "Sawka MN et al. (2007) ACSM Position Stand: Exercise and Fluid Replacement. Med Sci Sports Exerc."
+    confidence: high
+    tags: [hydration, dehydration, performance, fluid_replacement]
+    sport_specific: null
+
+  - id: caffeine_ergogenic
+    principle: "3-6mg/kg caffeine 30-60min pre-exercise improves endurance performance by 2-4%"
+    application: "Pre-workout caffeine: 3-6mg/kg, 30-60min before. Avoid habitual high intake to maintain sensitivity"
+    conditions: "Not contraindicated medically; timing allows for sleep quality maintenance"
+    citation: "Goldstein ER et al. (2010) Caffeine as an Ergogenic Aid. J Int Soc Sports Nutr."
+    confidence: high
+    tags: [caffeine, ergogenic, pre_exercise, endurance]
+    sport_specific: null
+
+  - id: iron_endurance_athletes
+    principle: "Endurance athletes are at higher risk of iron deficiency due to foot-strike hemolysis and sweating"
+    application: "Monitor ferritin levels (target >30ng/mL). Iron-rich foods post-training. Consider supplementation if low"
+    conditions: "Endurance athletes, especially runners; fatigue without other explanation"
+    citation: "Peeling P et al. (2008) Athletic Induced Iron Deficiency: New Insights into the Role of Inflammation. Eur J Appl Physiol."
+    confidence: high
+    tags: [iron, ferritin, deficiency, endurance, hemolysis]
+    sport_specific: running
+
+  - id: beetroot_nitrate
+    principle: "Dietary nitrate (beetroot juice, ~6-8mmol) improves exercise efficiency by reducing O2 cost"
+    application: "500ml beetroot juice 2-3h before race/key session. Most effective for sub-elite athletes and at altitude"
+    conditions: "Pre-competition or key training session; athlete is not already elite-level"
+    citation: "Jones AM (2014) Dietary Nitrate Supplementation and Exercise Performance. Sports Med."
+    confidence: medium
+    tags: [nitrate, beetroot, efficiency, oxygen_cost, ergogenic]
+    sport_specific: null
+
+  - id: omega3_inflammation
+    principle: "Omega-3 fatty acids (EPA/DHA) reduce exercise-induced inflammation and may accelerate recovery"
+    application: "Include fatty fish 2-3x/week or supplement 1-2g EPA+DHA daily. Most beneficial during high training blocks"
+    conditions: "High training load periods with elevated inflammation markers"
+    citation: "Jouris KB et al. (2011) The Effect of Omega-3 Fatty Acid Supplementation on the Inflammatory Response to Eccentric Strength Exercise. J Sports Sci Med."
+    confidence: medium
+    tags: [omega3, inflammation, recovery, epa, dha]
+    sport_specific: null
+
+  - id: daily_protein_target
+    principle: "Endurance athletes benefit from 1.6-2.2g/kg/day protein for optimal recovery and adaptation"
+    application: "Target 2.0g/kg/day for combined endurance + strength training. Increase to 2.2g/kg during caloric deficit"
+    conditions: "Daily protein planning for endurance athletes"
+    citation: "Morton RW et al. (2018) A Systematic Review, Meta-Analysis and Meta-Regression of Protein Supplementation. Br J Sports Med."
+    confidence: high
+    tags: [protein, daily_target, endurance, strength, recovery]
+    sport_specific: null
+
+  - id: electrolyte_replacement
+    principle: "Sodium losses during prolonged exercise (>2h) should be replaced to prevent hyponatremia and cramping"
+    application: "Add 500-1000mg sodium/L to fluid during sessions >2h. Higher in heat or heavy sweaters"
+    conditions: "Prolonged exercise >2h, especially in heat"
+    citation: "Shirreffs SM & Sawka MN (2011) Fluid and Electrolyte Needs for Training, Competition, and Recovery. J Sports Sci."
+    confidence: high
+    tags: [electrolyte, sodium, hyponatremia, cramping, heat]
+    sport_specific: null

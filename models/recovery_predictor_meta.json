@@ -1,0 +1,20 @@
+{
+  "model_type": "gradient_boosting",
+  "trained_at": "2026-03-07T23:46:00.196617",
+  "training_samples": 90,
+  "features": [
+    "hrv",
+    "rhr",
+    "sleep_hours",
+    "sleep_score",
+    "ctl",
+    "atl",
+    "tsb",
+    "daily_tss",
+    "tss_3day_avg",
+    "hrv_7d_trend",
+    "rhr_7d_trend"
+  ],
+  "score": -0.4617,
+  "version": 1
+}

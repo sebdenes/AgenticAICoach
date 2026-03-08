@@ -1,0 +1,38 @@
+{
+  "name": "Sebastien",
+  "weight_kg": 80,
+  "ftp": 315,
+  "eftp_ride": 299,
+  "eftp_run": 423,
+  "rhr_baseline": 42,
+  "hrv_baseline": 57,
+  "timezone": "Europe/Paris",
+  "sports": ["cycling", "running", "strength"],
+  "target_race": {
+    "name": "Boston Marathon",
+    "date": "2026-04-20",
+    "type": "marathon",
+    "goal_time": "3:00:00",
+    "marathon_pace_km": "4:16/km",
+    "easy_pace_km": "5:00-5:30/km",
+    "tempo_pace_km": "4:05-4:15/km",
+    "hr_at_mp": "150-158"
+  },
+  "nutrition": {
+    "protein_target_gkg": 2.0,
+    "min_fat_gkg": 1.0
+  },
+  "sleep": {
+    "target_hours": 7.5,
+    "bedtime_target": "22:30"
+  },
+  "checkin_times": {
+    "morning": "08:30",
+    "afternoon": "13:00",
+    "evening": "22:00"
+  },
+  "location": {
+    "latitude": 48.8566,
+    "longitude": 2.3522
+  }
+}

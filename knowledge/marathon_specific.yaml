@@ -1,0 +1,110 @@
+category: marathon_specific
+version: "1.0"
+rules:
+  - id: long_run_guidelines
+    principle: "Marathon long runs should peak at 32-35km (20-22mi) or 2.5-3h, whichever comes first"
+    application: "Long run pace: marathon pace +45-90s/km. Peak long run 3-4 weeks before race. Limit to 30% of weekly volume"
+    conditions: "Marathon training cycle, build phase"
+    citation: "Pfitzinger P & Douglas S (2009) Advanced Marathoning. 2nd ed. Human Kinetics."
+    confidence: high
+    tags: [long_run, marathon, distance, pacing, volume]
+    sport_specific: marathon
+
+  - id: marathon_pace_training
+    principle: "10-15% of weekly volume at marathon pace develops metabolic efficiency at race intensity"
+    application: "Include weekly marathon pace session: 10-16km at goal pace. Can be standalone or as part of long run"
+    conditions: "Specific preparation phase (8-12 weeks before race)"
+    citation: "Daniels J (2014) Daniels Running Formula. 3rd ed. Human Kinetics."
+    confidence: high
+    tags: [marathon_pace, specificity, metabolic_efficiency, race_pace]
+    sport_specific: marathon
+
+  - id: glycogen_depletion_training
+    principle: "Periodic glycogen-depleted training enhances fat oxidation and mitochondrial biogenesis"
+    application: "1-2x/month: fasted easy run or double session day (deplete in AM, train in PM). Never for intensity work"
+    conditions: "Base or early build phase; athlete tolerates fasted training"
+    citation: "Stellingwerff T (2012) Case Study: Nutrition and Training Periodization in Olympic Champion Race Walkers. Int J Sport Nutr Exerc Metab."
+    confidence: medium
+    tags: [glycogen, fat_oxidation, fasted_training, mitochondrial]
+    sport_specific: marathon
+
+  - id: heat_acclimation
+    principle: "Heat acclimation over 10-14 days improves thermoregulation and plasma volume"
+    application: "If racing in heat: 60min moderate exercise in heat 10-14 days before race. Start conservative, progress"
+    conditions: "Race expected in warm conditions (>22°C)"
+    citation: "Racinais S et al. (2015) Consensus Recommendations on Training and Competing in the Heat. Br J Sports Med."
+    confidence: high
+    tags: [heat, acclimation, thermoregulation, race_preparation]
+    sport_specific: marathon
+
+  - id: race_day_fueling
+    principle: "Marathon performance improves with 60-90g/h carbohydrate intake during the race"
+    application: "Practice race fueling in training. Start fueling by 30min. Mix glucose+fructose. Target 60-90g/h"
+    conditions: "Race day or race simulation long runs"
+    citation: "Stellingwerff T & Cox GR (2014) Systematic Review: Carbohydrate Supplementation on Exercise Performance. Sports Med."
+    confidence: high
+    tags: [race_fueling, carbohydrate, marathon, performance, gut_training]
+    sport_specific: marathon
+
+  - id: taper_length_marathon
+    principle: "Optimal marathon taper is 2-3 weeks with 40-60% volume reduction while maintaining intensity"
+    application: "Week -3: reduce volume 25%. Week -2: reduce 40%. Week -1: reduce 60%. Keep 2-3 quality sessions"
+    conditions: "Final 3 weeks before marathon"
+    citation: "Bosquet L et al. (2007) Effects of Tapering on Performance: A Meta-Analysis. Med Sci Sports Exerc."
+    confidence: high
+    tags: [taper, marathon, volume_reduction, race_preparation]
+    sport_specific: marathon
+
+  - id: critical_velocity
+    principle: "Critical velocity (CV) represents the boundary between sustainable and unsustainable exercise"
+    application: "Train at CV (approximately half-marathon pace) for threshold development. 20-40min sustained efforts"
+    conditions: "Threshold training sessions; CV estimated from race times or lab testing"
+    citation: "Jones AM & Vanhatalo A (2017) The 'Critical Power' Concept: Applications to Sports Performance. Eur J Sport Sci."
+    confidence: high
+    tags: [critical_velocity, threshold, half_marathon_pace, sustainable_pace]
+    sport_specific: running
+
+  - id: strength_for_runners
+    principle: "Heavy strength training 2-3x/week improves running economy by 2-8% without increasing body mass"
+    application: "Include squats, deadlifts, lunges, calf raises. 3-5 sets of 3-6 reps. Reduce in final 4 weeks before race"
+    conditions: "General preparation and build phases; taper reduces strength work"
+    citation: "Ronnestad BR & Mujika I (2014) Optimizing Strength Training for Running and Cycling Endurance Performance. Scand J Med Sci Sports."
+    confidence: high
+    tags: [strength, running_economy, resistance_training, neuromuscular]
+    sport_specific: running
+
+  - id: altitude_training
+    principle: "Live High-Train Low (LHTL) at 2000-2500m increases EPO, hemoglobin mass, and VO2max"
+    application: "If available: 3-4 weeks at altitude before marathon. Alternative: altitude tent for sleeping"
+    conditions: "Access to altitude training facilities or tent; 4+ weeks before race"
+    citation: "Chapman RF et al. (2014) Defining the Dose of Altitude Training. J Appl Physiol."
+    confidence: medium
+    tags: [altitude, live_high_train_low, epo, hemoglobin, vo2max]
+    sport_specific: running
+
+  - id: pacing_strategy
+    principle: "Even or slight negative split pacing produces fastest marathon times"
+    application: "First half at goal pace or 10-15s/km slower. Build in second half. Avoid >5% faster than goal in first 10km"
+    conditions: "Marathon race execution"
+    citation: "Abbiss CR & Laursen PB (2008) Describing and Understanding Pacing Strategies during Athletic Competition. Sports Med."
+    confidence: high
+    tags: [pacing, negative_split, race_execution, marathon]
+    sport_specific: marathon
+
+  - id: running_cadence
+    principle: "Increasing cadence by 5-10% while maintaining pace reduces impact forces and injury risk"
+    application: "Target 170-180 steps/min for easy runs. Use metronome or music at target cadence initially"
+    conditions: "Runner with cadence <165 spm or injury-prone"
+    citation: "Heiderscheit BC et al. (2011) Effects of Step Rate Manipulation on Joint Mechanics during Running. Med Sci Sports Exerc."
+    confidence: high
+    tags: [cadence, running_form, injury_prevention, impact_forces]
+    sport_specific: running
+
+  - id: cross_training_cycling
+    principle: "Cycling complements marathon training by building aerobic base with lower impact stress"
+    application: "Replace 1-2 easy runs/week with 60-90min Zone 2 cycling. Maintains aerobic volume while reducing impact"
+    conditions: "High mileage weeks where injury risk from volume is a concern"
+    citation: "Millet GP et al. (2002) Physiological and Biomechanical Adaptations to the Cycle to Run Transition. Sports Med."
+    confidence: medium
+    tags: [cross_training, cycling, impact_reduction, aerobic_base]
+    sport_specific: marathon

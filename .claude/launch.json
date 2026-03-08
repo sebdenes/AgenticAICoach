@@ -1,0 +1,18 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "coach-bot",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["bot.py"],
+      "port": 8765,
+      "autoPort": true
+    },
+    {
+      "name": "coach-dashboard",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["dashboard.py"],
+      "port": 3000
+    }
+  ]
+}

@@ -1,0 +1,110 @@
+category: recovery
+version: "1.0"
+rules:
+  - id: hrv_guided_training
+    principle: "7-day HRV rolling average is more reliable than daily readings for training decisions"
+    application: "Compare today's HRV to 7-day rolling mean. Modify training only if >1 SD deviation persists 2+ days"
+    conditions: "HRV data available for at least 7 consecutive days"
+    citation: "Plews DJ et al. (2013) Training Adaptation and Heart Rate Variability in Elite Endurance Athletes. Int J Sports Physiol Perform."
+    confidence: high
+    tags: [hrv, training_modification, fatigue, monitoring]
+    sport_specific: null
+
+  - id: supercompensation_window
+    principle: "Peak supercompensation occurs 36-72h after a hard session for trained endurance athletes"
+    application: "Schedule next hard session 48-72h after previous. If HRV not recovered by 72h, extend rest"
+    conditions: "After high-intensity or high-volume sessions (TSS >100 or IF >0.85)"
+    citation: "Issurin VB (2010) New Horizons for the Methodology and Physiology of Training Periodization. Sports Med."
+    confidence: high
+    tags: [recovery, periodization, session_spacing, supercompensation]
+    sport_specific: null
+
+  - id: active_recovery_benefit
+    principle: "Low-intensity active recovery accelerates lactate clearance and glycogen resynthesis vs passive rest"
+    application: "Prescribe 20-40min at <60% HRmax or Zone 1 power on recovery days. Avoid complete rest unless illness/injury"
+    conditions: "Athlete is not injured, ill, or severely overtrained"
+    citation: "Barnett A (2006) Using Recovery Modalities between Training Sessions in Elite Athletes. Sports Med."
+    confidence: high
+    tags: [active_recovery, lactate, glycogen, recovery_session]
+    sport_specific: null
+
+  - id: parasympathetic_reactivation
+    principle: "Post-exercise parasympathetic reactivation time predicts recovery status"
+    application: "If HRV recovery to baseline takes >24h post-session, the session was likely too intense for current fitness"
+    conditions: "Athlete has reliable daily HRV measurements"
+    citation: "Stanley J et al. (2013) Cardiac Parasympathetic Reactivation Following Exercise. Sports Med."
+    confidence: high
+    tags: [hrv, recovery, post_exercise, parasympathetic]
+    sport_specific: null
+
+  - id: detraining_timeline
+    principle: "VO2max declines ~7% in first 12-21 days of inactivity; strength retains longer"
+    application: "If forced rest >7 days, include low-volume maintenance work. After 14+ days off, plan gradual rebuild"
+    conditions: "Unplanned or extended rest period"
+    citation: "Mujika I & Padilla S (2000) Detraining: Loss of Training-Induced Physiological and Performance Adaptations. Sports Med."
+    confidence: high
+    tags: [detraining, rest, fitness_loss, maintenance]
+    sport_specific: null
+
+  - id: cold_water_immersion
+    principle: "Cold water immersion (10-15°C for 10-15min) reduces perceived soreness but may blunt strength adaptations"
+    application: "Use CWI after competition or very hard sessions. Avoid after strength sessions where adaptation is the goal"
+    conditions: "Post-exercise recovery decision; not during strength training blocks"
+    citation: "Leeder J et al. (2012) Cold Water Immersion and Recovery from Strenuous Exercise. Br J Sports Med."
+    confidence: medium
+    tags: [cold_water, recovery_modality, soreness, strength_adaptation]
+    sport_specific: null
+
+  - id: compression_garments
+    principle: "Compression garments reduce perceived muscle soreness and may accelerate CK clearance"
+    application: "Wearing compression during and 12-24h after hard sessions may aid subjective recovery"
+    conditions: "Post high-intensity or high-impact sessions"
+    citation: "Hill J et al. (2014) Compression Garments and Recovery from Exercise-Induced Muscle Damage. Br J Sports Med."
+    confidence: medium
+    tags: [compression, recovery_modality, soreness, creatine_kinase]
+    sport_specific: null
+
+  - id: foam_rolling_recovery
+    principle: "Foam rolling for 10-20min post-exercise can reduce DOMS and improve short-term ROM"
+    application: "Include foam rolling in cool-down routine, especially after lower body sessions"
+    conditions: "Post-exercise, particularly after running or cycling with eccentric load"
+    citation: "Pearcey GE et al. (2015) Foam Rolling for Delayed-Onset Muscle Soreness and Recovery. Med Sci Sports Exerc."
+    confidence: medium
+    tags: [foam_rolling, doms, range_of_motion, cool_down]
+    sport_specific: null
+
+  - id: sleep_and_recovery
+    principle: "Sleep is the single most important recovery modality; growth hormone peaks during deep sleep"
+    application: "Prioritize 7-9h sleep over all other recovery modalities. Poor sleep negates benefits of other strategies"
+    conditions: "Always applicable — sleep is non-negotiable for recovery"
+    citation: "Halson SL (2014) Sleep in Elite Athletes and Nutritional Interventions to Enhance Sleep. Sports Med."
+    confidence: high
+    tags: [sleep, recovery, growth_hormone, priority]
+    sport_specific: null
+
+  - id: recovery_score_interpretation
+    principle: "Recovery scores from wearables correlate with HRV and subjective readiness"
+    application: "Use device recovery score as a quick check, but validate with HRV trend and subjective feel"
+    conditions: "Wearable device provides recovery scoring"
+    citation: "Javaloyes A et al. (2019) Training Prescription Guided by HRV in Cycling. Eur J Appl Physiol."
+    confidence: medium
+    tags: [recovery_score, wearable, hrv, subjective_readiness]
+    sport_specific: null
+
+  - id: rhr_illness_marker
+    principle: "Resting heart rate elevation >5bpm above baseline for 2+ days may indicate illness onset"
+    application: "If RHR is elevated with no training load explanation, reduce intensity and monitor for symptoms"
+    conditions: "RHR data available with established baseline (14+ days)"
+    citation: "Buchheit M (2014) Monitoring Training Status with HR Measures. Int J Sports Physiol Perform."
+    confidence: high
+    tags: [rhr, illness, monitoring, early_warning]
+    sport_specific: null
+
+  - id: dual_marker_recovery
+    principle: "Combined HRV depression + RHR elevation is a stronger recovery indicator than either alone"
+    application: "When both HRV is below baseline AND RHR is elevated, enforce rest day regardless of schedule"
+    conditions: "Both HRV and RHR data available with established baselines"
+    citation: "Plews DJ et al. (2017) Heart Rate Variability and Training Intensity Distribution in Elite Rowers. Int J Sports Physiol Perform."
+    confidence: high
+    tags: [hrv, rhr, recovery, dual_marker, rest_day]
+    sport_specific: null

@@ -1,0 +1,17 @@
+{
+  "model_type": "gradient_boosting",
+  "trained_at": "2026-03-07T23:46:00.230764",
+  "training_samples": 77,
+  "features": [
+    "current_ctl",
+    "current_atl",
+    "ctl_trend_7d",
+    "atl_trend_7d",
+    "avg_weekly_tss",
+    "training_consistency",
+    "avg_sleep_7d",
+    "avg_hrv_7d"
+  ],
+  "score": -4.6549,
+  "version": 1
+}

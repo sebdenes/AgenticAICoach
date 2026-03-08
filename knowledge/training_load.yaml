@@ -1,0 +1,110 @@
+category: training_load
+version: "1.0"
+rules:
+  - id: acwr_sweet_spot
+    principle: "Acute:Chronic Workload Ratio between 0.8-1.3 is associated with lowest injury risk"
+    application: "Keep weekly load within 80-130% of 4-week rolling average. Flag when ACWR exceeds 1.5"
+    conditions: "Sufficient training history (4+ weeks of consistent data)"
+    citation: "Gabbett TJ (2016) The Training-Injury Prevention Paradox. Br J Sports Med."
+    confidence: high
+    tags: [acwr, injury_prevention, load_management, training_load]
+    sport_specific: null
+
+  - id: training_monotony
+    principle: "High training monotony (low day-to-day variation) increases overtraining risk"
+    application: "Vary daily TSS/load. Monotony = mean(daily load) / SD(daily load). Flag when >2.0"
+    conditions: "7 consecutive days of training load data"
+    citation: "Foster C (1998) Monitoring Training in Athletes with Reference to Overtraining Syndrome. Med Sci Sports Exerc."
+    confidence: high
+    tags: [monotony, overtraining, load_variation, training_design]
+    sport_specific: null
+
+  - id: ctl_atl_tsb_model
+    principle: "CTL (fitness), ATL (fatigue), TSB (form) model describes training adaptation dynamics"
+    application: "TSB between -10 and +10 for normal training. TSB >+15 for race freshness. TSB <-20 flags overreaching"
+    conditions: "Power/pace data available for TSS calculation"
+    citation: "Banister EW (1991) Modeling Elite Athletic Performance. In: Physiological Testing of Elite Athletes."
+    confidence: high
+    tags: [ctl, atl, tsb, performance_model, fitness, fatigue]
+    sport_specific: null
+
+  - id: progressive_overload
+    principle: "Weekly training load should increase by no more than 5-10% to minimise injury risk"
+    application: "Compare this week's planned TSS to last week. Flag increases >10% for review"
+    conditions: "Progressive training phase (not taper or recovery week)"
+    citation: "Buist I et al. (2010) No Effect of a Graded Training Program on the Number of Running-Related Injuries. Am J Sports Med."
+    confidence: high
+    tags: [progressive_overload, weekly_increase, injury_prevention]
+    sport_specific: running
+
+  - id: taper_for_marathon
+    principle: "2-3 week exponential taper with 40-60% volume reduction preserves fitness while removing fatigue"
+    application: "Begin taper 14-21 days before marathon. Maintain intensity, cut volume 40-60%. Keep 2-3 key sessions/week"
+    conditions: "Within 3 weeks of a target race"
+    citation: "Bosquet L et al. (2007) Effects of Tapering on Performance: A Meta-Analysis. Med Sci Sports Exerc."
+    confidence: high
+    tags: [taper, marathon, race_preparation, volume_reduction]
+    sport_specific: marathon
+
+  - id: polarized_training
+    principle: "Polarized intensity distribution (80% easy, 20% hard) produces superior endurance adaptations"
+    application: "~80% of training time in Zone 1-2, ~20% in Zone 4-5, minimal time in Zone 3 (threshold)"
+    conditions: "Base and build phases of endurance training"
+    citation: "Stoggl T & Sperlich B (2015) The Training Intensity Distribution Among Well-Trained and Elite Endurance Athletes. Front Physiol."
+    confidence: high
+    tags: [polarized, intensity_distribution, endurance, zones]
+    sport_specific: null
+
+  - id: block_periodization
+    principle: "Concentrated blocks of specific stimulus produce superior adaptation vs mixed training"
+    application: "2-4 week blocks focusing on one primary quality (endurance, threshold, VO2max). Include recovery blocks"
+    conditions: "Intermediate to advanced athletes with established base fitness"
+    citation: "Issurin VB (2010) New Horizons for the Methodology and Physiology of Training Periodization. Sports Med."
+    confidence: high
+    tags: [periodization, block, mesocycle, training_design]
+    sport_specific: null
+
+  - id: rpe_load_monitoring
+    principle: "Session RPE x duration is a valid training load metric that correlates with HR-based methods"
+    application: "When power/HR data unavailable, use RPE (1-10) x minutes as load proxy. Track weekly sRPE"
+    conditions: "Any training session, especially when device data is missing"
+    citation: "Foster C et al. (2001) A New Approach to Monitoring Exercise Training. J Strength Cond Res."
+    confidence: high
+    tags: [rpe, subjective_load, monitoring, session_load]
+    sport_specific: null
+
+  - id: recovery_week_pattern
+    principle: "Every 3-4 weeks of progressive load should be followed by a recovery week at 50-60% volume"
+    application: "Plan 3:1 or 4:1 loading pattern. Recovery weeks maintain intensity but cut volume 40-50%"
+    conditions: "Structured training plan with progressive overload"
+    citation: "Bompa TO & Haff GG (2009) Periodization: Theory and Methodology of Training. 5th ed."
+    confidence: high
+    tags: [recovery_week, periodization, load_management, deload]
+    sport_specific: null
+
+  - id: dual_threshold_model
+    principle: "Two distinct physiological thresholds exist: VT1 (aerobic) and VT2 (anaerobic/critical power)"
+    application: "Train below VT1 for base work, between VT1-VT2 for tempo, above VT2 for VO2max development"
+    conditions: "Athlete has established threshold values from testing"
+    citation: "Jamnick NA et al. (2020) An Examination and Critique of Current Methods to Determine Exercise Intensity Domains. Sports Med."
+    confidence: high
+    tags: [threshold, vt1, vt2, intensity_zones, physiological]
+    sport_specific: null
+
+  - id: cumulative_load_injury
+    principle: "Absolute training load spikes (>1500 AU/week) increase injury risk regardless of ACWR"
+    application: "Monitor absolute weekly load alongside ACWR. Even with good ACWR, extreme loads carry risk"
+    conditions: "High training volume weeks"
+    citation: "Malone S et al. (2017) High Chronic Training Loads and Exposure to Bouts of Maximal Velocity Running. J Sports Sci."
+    confidence: medium
+    tags: [absolute_load, injury_risk, spikes, load_ceiling]
+    sport_specific: null
+
+  - id: training_readiness_score
+    principle: "Multi-factor readiness assessment outperforms single-metric decisions"
+    application: "Combine HRV, RHR, sleep quality, subjective readiness, and training load to make go/no-go decisions"
+    conditions: "Multiple data sources available"
+    citation: "Saw AE et al. (2016) Monitoring the Athlete Training Response: Subjective Self-Reported Measures. Int J Sports Physiol Perform."
+    confidence: high
+    tags: [readiness, multi_factor, subjective, decision_making]
+    sport_specific: null

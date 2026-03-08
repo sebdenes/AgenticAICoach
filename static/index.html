@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Coach — Athlete Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+</head>
+<body>
+
+  <!-- ========== HEADER ========== -->
+  <header class="header">
+    <div class="header-inner">
+      <div class="header-left">
+        <div class="logo">
+          <div class="logo-mark">
+            <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+              <rect width="28" height="28" rx="7" fill="url(#logo-grad)"/>
+              <path d="M8 14.5C8 11 10.5 8 14 8C17.5 8 20 11 20 14.5" stroke="white" stroke-width="2.2" stroke-linecap="round"/>
+              <circle cx="14" cy="17" r="2.5" fill="white"/>
+              <defs>
+                <linearGradient id="logo-grad" x1="0" y1="0" x2="28" y2="28">
+                  <stop stop-color="#8b5cf6"/>
+                  <stop offset="1" stop-color="#3b82f6"/>
+                </linearGradient>
+              </defs>
+            </svg>
+          </div>
+          <span class="logo-text">Coach</span>
+        </div>
+      </div>
+
+      <div class="header-center">
+        <div class="athlete-info">
+          <span class="athlete-name">Sebastien</span>
+          <span class="race-countdown" id="raceCountdown">
+            <span class="countdown-number" id="daysToRace">--</span>
+            <span class="countdown-label">days to <span id="raceName">Boston</span></span>
+          </span>
+        </div>
+      </div>
+
+      <div class="header-right">
+        <div class="recovery-badge" id="recoveryBadge">
+          <span class="recovery-dot" id="recoveryDot"></span>
+          <span class="recovery-label" id="recoveryLabel">Loading...</span>
+        </div>
+        <div class="last-updated" id="lastUpdated">--</div>
+      </div>
+    </div>
+  </header>
+
+  <!-- ========== MAIN DASHBOARD ========== -->
+  <main class="dashboard">
+
+    <!-- Row 1: Today's Metrics -->
+    <section class="row row-metrics">
+      <!-- Recovery Score -->
+      <div class="card card-metric" id="cardRecovery">
+        <div class="card-skeleton">
+          <div class="skeleton-line skeleton-sm"></div>
+          <div class="skeleton-line skeleton-lg"></div>
+          <div class="skeleton-line skeleton-md"></div>
+        </div>
+        <div class="card-content hidden">
+          <div class="metric-header">
+            <span class="metric-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+              </svg>
+            </span>
+            <span class="metric-title">Recovery Score</span>
+          </div>
+          <div class="metric-value-row">
+            <span class="metric-value" id="recoveryScore">--</span>
+            <span class="metric-unit">/100</span>
+          </div>
+          <div class="metric-sub" id="whoopRecovery">
+            <span class="whoop-badge">W</span>
+            <span id="whoopRecoveryVal">--</span>% recovery
+          </div>
+        </div>
+      </div>
+
+      <!-- Sleep -->
+      <div class="card card-metric" id="cardSleep">
+        <div class="card-skeleton">
+          <div class="skeleton-line skeleton-sm"></div>
+          <div class="skeleton-line skeleton-lg"></div>
+          <div class="skeleton-line skeleton-md"></div>
+        </div>
+        <div class="card-content hidden">
+          <div class="metric-header">
+            <span class="metric-icon icon-sleep">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+              </svg>
+            </span>
+            <span class="metric-title">Sleep</span>
+            <span class="trend-arrow" id="sleepTrend"></span>
+          </div>
+          <div class="metric-value-row">
+            <span class="metric-value" id="sleepHours">--</span>
+            <span class="metric-unit">hrs</span>
+          </div>
+          <div class="metric-details">
+            <span class="detail-item">
+              <span class="detail-label">Quality</span>
+              <span class="detail-value" id="sleepQuality">--</span>
+            </span>
+            <span class="detail-divider"></span>
+            <span class="detail-item">
+              <span class="detail-label">Debt</span>
+              <span class="detail-value debt-warn" id="sleepDebt">--</span>
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Training Load -->
+      <div class="card card-metric" id="cardLoad">
+        <div class="card-skeleton">
+          <div class="skeleton-line skeleton-sm"></div>
+          <div class="skeleton-line skeleton-lg"></div>
+          <div class="skeleton-line skeleton-md"></div>
+        </div>
+        <div class="card-content hidden">
+          <div class="metric-header">
+            <span class="metric-icon icon-load">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+              </svg>
+            </span>
+            <span class="metric-title">Training Load</span>
+          </div>
+          <div class="metric-trio">
+            <div class="trio-item">
+              <span class="trio-value" id="ctlValue">--</span>
+              <span class="trio-label">Fitness</span>
+            </div>
+            <div class="trio-item">
+              <span class="trio-value" id="atlValue">--</span>
+              <span class="trio-label">Fatigue</span>
+            </div>
+            <div class="trio-item">
+              <span class="trio-value tsb" id="tsbValue">--</span>
+              <span class="trio-label">Form</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Strain -->
+      <div class="card card-metric" id="cardStrain">
+        <div class="card-skeleton">
+          <div class="skeleton-line skeleton-sm"></div>
+          <div class="skeleton-line skeleton-lg"></div>
+          <div class="skeleton-line skeleton-md"></div>
+        </div>
+        <div class="card-content hidden">
+          <div class="metric-header">
+            <span class="metric-icon icon-strain">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+              </svg>
+            </span>
+            <span class="metric-title">Strain</span>
+          </div>
+          <div class="metric-value-row">
+            <span class="metric-value" id="strainValue">--</span>
+            <span class="metric-unit">/21</span>
+          </div>
+          <div class="metric-sub" id="caloriesSub">
+            <span id="caloriesValue">--</span> kcal burned
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Row 2: Sleep Trend + Fitness & Fatigue -->
+    <section class="row row-charts-2col">
+      <div class="card card-chart" id="cardSleepChart">
+        <div class="card-chart-header">
+          <h3 class="chart-title">Sleep Trend</h3>
+          <span class="chart-period">Last 14 days</span>
+        </div>
+        <div class="chart-container">
+          <canvas id="sleepChart"></canvas>
+        </div>
+      </div>
+
+      <div class="card card-chart" id="cardFitnessChart">
+        <div class="card-chart-header">
+          <h3 class="chart-title">Fitness &amp; Fatigue</h3>
+          <span class="chart-period">Last 14 days</span>
+        </div>
+        <div class="chart-container">
+          <canvas id="fitnessChart"></canvas>
+        </div>
+      </div>
+    </section>
+
+    <!-- Row 3: HRV + Weekly Load -->
+    <section class="row row-charts-2col">
+      <div class="card card-chart" id="cardHRVChart">
+        <div class="card-chart-header">
+          <h3 class="chart-title">HRV &amp; Resting HR</h3>
+          <span class="chart-period">Last 14 days</span>
+        </div>
+        <div class="chart-container">
+          <canvas id="hrvChart"></canvas>
+        </div>
+      </div>
+
+      <div class="card card-chart" id="cardLoadChart">
+        <div class="card-chart-header">
+          <h3 class="chart-title">Weekly Training Load</h3>
+          <span class="chart-period">By sport type</span>
+        </div>
+        <div class="chart-container">
+          <canvas id="loadChart"></canvas>
+        </div>
+      </div>
+    </section>
+
+    <!-- Row 4: Alerts + Recent Activities -->
+    <section class="row row-panels-2col">
+      <!-- Active Alerts -->
+      <div class="card card-panel" id="cardAlerts">
+        <div class="panel-header">
+          <h3 class="panel-title">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+              <line x1="12" y1="9" x2="12" y2="13"/>
+              <line x1="12" y1="17" x2="12.01" y2="17"/>
+            </svg>
+            Active Alerts
+          </h3>
+          <span class="alert-count" id="alertCount">0</span>
+        </div>
+        <div class="panel-body" id="alertsList">
+          <div class="empty-state">No alerts</div>
+        </div>
+      </div>
+
+      <!-- Recent Activities -->
+      <div class="card card-panel" id="cardActivities">
+        <div class="panel-header">
+          <h3 class="panel-title">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"/>
+              <polyline points="12 6 12 12 16 14"/>
+            </svg>
+            Recent Activities
+          </h3>
+        </div>
+        <div class="panel-body" id="activitiesList">
+          <div class="empty-state">No recent activities</div>
+        </div>
+      </div>
+    </section>
+
+      <!-- ── Training Plan + Weather ───────────────── -->
+      <section class="row row-charts-2col">
+
+        <!-- Training Plan -->
+        <div class="card card-panel" id="cardTrainingPlan">
+          <div class="card-skeleton">
+            <div class="skeleton-line skeleton-sm"></div>
+            <div class="skeleton-line skeleton-md"></div>
+            <div class="skeleton-line skeleton-lg"></div>
+            <div class="skeleton-line skeleton-md"></div>
+            <div class="skeleton-line skeleton-sm"></div>
+          </div>
+          <div class="card-content hidden">
+            <div class="panel-header">
+              <h3 class="panel-title">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                This Week's Sessions
+              </h3>
+              <span class="chart-period" id="trainingPhase">—</span>
+            </div>
+            <div class="panel-body" id="trainingSessionsList">
+              <div class="empty-state">No plan yet — send /plan in Telegram</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Weather -->
+        <div class="card card-panel" id="cardWeather">
+          <div class="card-skeleton">
+            <div class="skeleton-line skeleton-sm"></div>
+            <div class="skeleton-line skeleton-md"></div>
+            <div class="skeleton-line skeleton-md"></div>
+            <div class="skeleton-line skeleton-sm"></div>
+          </div>
+          <div class="card-content hidden">
+            <div class="panel-header">
+              <h3 class="panel-title">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></svg>
+                Training Conditions
+              </h3>
+              <span class="chart-period" id="weatherDesc">—</span>
+            </div>
+            <div id="weatherContent">
+              <div class="empty-state">Loading weather...</div>
+            </div>
+          </div>
+        </div>
+
+      </section>
+
+      <!-- ── Performance Forecast ─────────────────── -->
+      <section class="row">
+        <div class="card card-chart" id="cardForecast">
+          <div class="card-skeleton">
+            <div class="skeleton-line skeleton-sm"></div>
+            <div class="skeleton-line skeleton-lg" style="height: 180px; margin-top: 12px;"></div>
+          </div>
+          <div class="card-content hidden">
+            <div class="card-chart-header">
+              <h3 class="chart-title">Performance Forecast</h3>
+              <span class="chart-period" id="forecastPeriod">14-day CTL projection</span>
+            </div>
+            <div class="chart-container" style="height: 220px;">
+              <canvas id="forecastChart"></canvas>
+            </div>
+            <div class="forecast-summary" id="forecastSummary"></div>
+          </div>
+        </div>
+      </section>
+
+    <!-- Row 5: Race Prediction -->
+    <section class="row row-full">
+      <div class="card card-prediction" id="cardPrediction">
+        <div class="card-skeleton">
+          <div class="skeleton-line skeleton-sm"></div>
+          <div class="skeleton-line skeleton-lg"></div>
+          <div class="skeleton-line skeleton-md"></div>
+        </div>
+        <div class="card-content hidden">
+          <div class="prediction-header">
+            <div class="prediction-title-group">
+              <h3 class="prediction-title">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="12" cy="8" r="7"/>
+                  <polyline points="8.21 13.89 7 23 12 20 17 23 15.79 13.88"/>
+                </svg>
+                Race Prediction
+              </h3>
+              <span class="prediction-race" id="predictionRace">Boston Marathon 2026</span>
+            </div>
+          </div>
+
+          <div class="prediction-grid">
+            <div class="prediction-main">
+              <div class="prediction-time-block">
+                <span class="prediction-label">Predicted Finish</span>
+                <span class="prediction-time" id="predictedTime">--:--:--</span>
+              </div>
+              <div class="prediction-time-block">
+                <span class="prediction-label">Goal Time</span>
+                <span class="prediction-goal" id="goalTime">--:--:--</span>
+              </div>
+              <div class="prediction-time-block">
+                <span class="prediction-label">Gap</span>
+                <span class="prediction-gap" id="predictionGap">--</span>
+              </div>
+            </div>
+
+            <div class="prediction-confidence">
+              <span class="confidence-label">Confidence</span>
+              <div class="confidence-bar-track">
+                <div class="confidence-bar-fill" id="confidenceBar"></div>
+              </div>
+              <span class="confidence-value" id="confidenceValue">--%</span>
+            </div>
+
+            <div class="prediction-methods" id="predictionMethods">
+              <!-- filled by JS -->
+            </div>
+
+            <div class="prediction-factors">
+              <span class="factors-label">Limiting Factors</span>
+              <ul class="factors-list" id="limitingFactors">
+                <!-- filled by JS -->
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
