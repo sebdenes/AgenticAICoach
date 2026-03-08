@@ -56,6 +56,16 @@ def main():
 
     # Initialize components
     db = Database(app_cfg.db_path)
+
+    # Run any pending DB migrations (safe to run every startup — tracks applied versions)
+    try:
+        from migrations.runner import run_migrations
+        applied = run_migrations(app_cfg.db_path)
+        if applied:
+            log.info(f"DB migrations applied: {', '.join(applied)}")
+    except Exception as e:
+        log.warning(f"Migration runner failed (non-fatal): {e}")
+
     iv = IntervalsClient(app_cfg.intervals_api_key, app_cfg.intervals_athlete_id, db)
 
     # Initialize Whoop client (optional — works without credentials)

@@ -298,6 +298,78 @@ class Database:
             result["forecast_json"] = row["forecast_json"]
         return result
 
+    # ── Strava Activity History ────────────────────────────
+
+    def store_strava_activity(self, act: dict) -> bool:
+        """Store a normalized Strava activity.
+
+        Uses INSERT OR IGNORE on strava_id — safe to call repeatedly.
+        Returns True if the row was newly inserted, False if it already existed.
+        """
+        strava_id = str(act.get("strava_id") or "")
+        if not strava_id:
+            return False
+        date_str = (act.get("start_date_local") or "")[:10]
+        with self._conn() as conn:
+            cursor = conn.execute(
+                "INSERT OR IGNORE INTO strava_activities "
+                "(strava_id, date, type, name, start_date_local, duration_secs, "
+                "distance_m, avg_hr, max_hr, avg_power, np, elevation_m, avg_speed, "
+                "kudos, suffer_score, raw_json, synced_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    strava_id,
+                    date_str,
+                    act.get("type"),
+                    act.get("name"),
+                    act.get("start_date_local"),
+                    act.get("moving_time"),
+                    act.get("distance"),
+                    act.get("average_heartrate"),
+                    act.get("max_heartrate"),
+                    act.get("average_watts"),
+                    act.get("weighted_average_watts"),
+                    act.get("total_elevation_gain"),
+                    act.get("average_speed"),
+                    act.get("kudos_count"),
+                    act.get("suffer_score"),
+                    json.dumps(act),
+                    datetime.now().isoformat(),
+                ),
+            )
+            return cursor.rowcount > 0
+
+    def get_strava_activities(self, days: int = None) -> list[dict]:
+        """Return stored Strava activities as normalized dicts.
+
+        Parameters
+        ----------
+        days : int, optional
+            If provided, only return activities within the last N days.
+            If None, return all stored activities.
+        """
+        with self._conn() as conn:
+            if days:
+                cutoff = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+                rows = conn.execute(
+                    "SELECT raw_json FROM strava_activities "
+                    "WHERE date >= ? ORDER BY date DESC",
+                    (cutoff,),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT raw_json FROM strava_activities ORDER BY date DESC"
+                ).fetchall()
+        return [json.loads(r["raw_json"]) for r in rows]
+
+    def count_strava_activities(self) -> int:
+        """Return total number of Strava activities stored in DB."""
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) as n FROM strava_activities"
+            ).fetchone()
+        return row["n"] if row else 0
+
     # ── Model Metadata ─────────────────────────────────────
 
     def store_model_metadata(self, model_type: str, version: int, score: float,
@@ -480,4 +552,27 @@ CREATE TABLE IF NOT EXISTS prediction_log (
 
 CREATE INDEX IF NOT EXISTS idx_model_type ON model_metadata(model_type);
 CREATE INDEX IF NOT EXISTS idx_pred_ts ON prediction_log(timestamp);
+
+CREATE TABLE IF NOT EXISTS strava_activities (
+    strava_id        TEXT PRIMARY KEY,
+    date             TEXT NOT NULL,
+    type             TEXT,
+    name             TEXT,
+    start_date_local TEXT,
+    duration_secs    INTEGER,
+    distance_m       REAL,
+    avg_hr           REAL,
+    max_hr           REAL,
+    avg_power        REAL,
+    np               REAL,
+    elevation_m      REAL,
+    avg_speed        REAL,
+    kudos            INTEGER,
+    suffer_score     REAL,
+    raw_json         TEXT,
+    synced_at        TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_strava_date ON strava_activities(date);
+CREATE INDEX IF NOT EXISTS idx_strava_type ON strava_activities(type);
 """

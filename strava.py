@@ -26,6 +26,11 @@ class StravaClient:
 
     Tokens expire every 6 hours — _ensure_token() auto-refreshes transparently.
     On first run the user must authorize via /strava → dashboard OAuth flow.
+
+    Activity data strategy
+    ----------------------
+    - ``activities(days)``     — DB-first for history; live API for last 2 days
+    - ``sync_all_history()``   — paginate ALL activities → INSERT OR IGNORE in DB
     """
 
     def __init__(
@@ -158,70 +163,178 @@ class StravaClient:
             r.raise_for_status()
             return r.json()
 
+    # ── Normalization ──────────────────────────────────────────
+
+    def _normalize_activity(self, act: dict) -> dict:
+        """Normalize a raw Strava API activity dict to our internal schema."""
+        sport = act.get("sport_type") or act.get("type") or "Unknown"
+        return {
+            # Core fields — match Intervals.icu schema for deduplication
+            "type": sport,
+            "name": act.get("name", ""),
+            "start_date_local": act.get("start_date_local", ""),
+            # Duration / distance
+            "moving_time": act.get("moving_time"),
+            "elapsed_time": act.get("elapsed_time"),
+            "distance": act.get("distance"),
+            # Heart rate
+            "average_heartrate": act.get("average_heartrate"),
+            "max_heartrate": act.get("max_heartrate"),
+            # Power (cycling)
+            "average_watts": act.get("average_watts"),
+            "weighted_average_watts": act.get("weighted_average_watts"),
+            # Elevation
+            "total_elevation_gain": act.get("total_elevation_gain"),
+            # Pace (m/s)
+            "average_speed": act.get("average_speed"),
+            # Strava-specific
+            "strava_id": act.get("id"),
+            "kudos_count": act.get("kudos_count"),
+            "suffer_score": act.get("suffer_score"),
+            # Source tag — tells Claude that TSS/training load is unavailable
+            "_source": "strava",
+        }
+
     # ── Data Fetchers ──────────────────────────────────────────
 
     async def activities(self, days: int = 7) -> list[dict]:
-        """Fetch recent activities from Strava.
+        """Fetch activities from Strava, combining local DB history + live API.
 
-        Returns a list of activity dicts with fields matching Intervals.icu schema
-        where possible, so they can be merged transparently.
+        Strategy
+        --------
+        1. Always query live API for the last 2 days (real-time gap filling —
+           catches activities uploaded before Intervals.icu syncs them).
+           Results are cached 5 min and stored in DB as a side effect.
+        2. Query local DB for the full requested window (populated by sync_all_history).
+        3. If DB has data → merge DB + live (dedup by strava_id) and return.
+        4. If DB is empty (no sync yet) → fall back to full live API call.
+
+        Parameters
+        ----------
+        days : int
+            How many days back to retrieve.  Range 1–3650.
         """
-        cache_key = f"strava_activities_{days}"
+        days = max(1, min(days, 3650))
+
+        # --- Step 1: live API for the last 2 days (real-time freshness) ---
+        live_days = min(days, 2)
+        cache_key = "strava_activities_live"
         cached = self.db.cache_get(cache_key)
         if cached:
-            return json.loads(cached)
+            live_acts = json.loads(cached)
+        else:
+            after = int(time.time()) - (live_days * 86400)
+            try:
+                raw = await self._get("athlete/activities", params={
+                    "after": after,
+                    "per_page": 50,
+                })
+                live_acts = [
+                    self._normalize_activity(a)
+                    for a in (raw if isinstance(raw, list) else [])
+                ]
+                self.db.cache_set(cache_key, json.dumps(live_acts), ttl_minutes=5)
+                # Store new activities in DB as a side effect
+                for act in live_acts:
+                    self.db.store_strava_activity(act)
+                log.debug(
+                    "Strava live fetch: %d activities (last %d days)",
+                    len(live_acts), live_days,
+                )
+            except Exception as exc:
+                log.warning("Strava live activities fetch failed: %s", exc)
+                live_acts = []
 
-        # Unix timestamp for `days` ago
+        # --- Step 2: DB history for the full window ---
+        db_acts = self.db.get_strava_activities(days=days)
+
+        if db_acts:
+            # Merge: DB as primary, append live activities not already stored
+            db_ids = {a.get("strava_id") for a in db_acts}
+            for la in live_acts:
+                if la.get("strava_id") not in db_ids:
+                    db_acts.append(la)
+            log.info(
+                "Strava activities: %d from DB + live merge (last %d days)",
+                len(db_acts), days,
+            )
+            return db_acts
+
+        # --- Step 4: DB empty — fall back to full live API call ---
+        if days <= live_days:
+            return live_acts  # already fetched above
+
         after = int(time.time()) - (days * 86400)
-
         try:
             raw = await self._get("athlete/activities", params={
                 "after": after,
                 "per_page": 50,
             })
+            acts = [
+                self._normalize_activity(a)
+                for a in (raw if isinstance(raw, list) else [])
+            ]
+            log.info(
+                "Strava activities: %d from live API (last %d days, no DB history)",
+                len(acts), days,
+            )
+            return acts
         except Exception as exc:
-            log.warning("Strava activities fetch failed: %s", exc)
-            return []
+            log.warning("Strava full-window fetch failed: %s", exc)
+            return live_acts
 
-        if not isinstance(raw, list):
-            log.warning("Strava activities: unexpected response type %s", type(raw))
-            return []
+    async def sync_all_history(self) -> dict:
+        """Paginate through ALL Strava activities and store in local DB.
 
-        # Normalize to a field schema compatible with Intervals.icu activities
-        activities = []
-        for act in raw:
-            # Strava uses sport_type (newer) or type (older)
-            sport = act.get("sport_type") or act.get("type") or "Unknown"
-            activities.append({
-                # Core fields (match Intervals schema for deduplication)
-                "type": sport,
-                "name": act.get("name", ""),
-                "start_date_local": act.get("start_date_local", ""),
-                # Duration / distance
-                "moving_time": act.get("moving_time"),
-                "elapsed_time": act.get("elapsed_time"),
-                "distance": act.get("distance"),
-                # Heart rate
-                "average_heartrate": act.get("average_heartrate"),
-                "max_heartrate": act.get("max_heartrate"),
-                # Power (cycling)
-                "average_watts": act.get("average_watts"),
-                "weighted_average_watts": act.get("weighted_average_watts"),
-                # Elevation
-                "total_elevation_gain": act.get("total_elevation_gain"),
-                # Pace (m/s — convert to min/km if needed)
-                "average_speed": act.get("average_speed"),
-                # Strava-specific extras
-                "strava_id": act.get("id"),
-                "kudos_count": act.get("kudos_count"),
-                "suffer_score": act.get("suffer_score"),
-                # Source tag — tells Claude TSS is not available
-                "_source": "strava",
-            })
+        Uses INSERT OR IGNORE on strava_id — completely safe to re-run.
+        No activities are duplicated; only genuinely new ones are counted.
 
-        self.db.cache_set(cache_key, json.dumps(activities), ttl_minutes=5)
-        log.info("Fetched %d activities from Strava (last %d days)", len(activities), days)
-        return activities
+        Returns
+        -------
+        dict
+            {"fetched": total_fetched, "new": total_new, "pages": pages}
+        """
+        await self._ensure_token()
+
+        total_fetched = 0
+        total_new = 0
+        page = 1
+
+        while True:
+            try:
+                raw = await self._get("athlete/activities", params={
+                    "per_page": 50,
+                    "page": page,
+                })
+            except Exception as exc:
+                log.warning("Strava history sync page %d failed: %s", page, exc)
+                break
+
+            if not isinstance(raw, list) or not raw:
+                break  # no more pages
+
+            total_fetched += len(raw)
+            for act in raw:
+                normalized = self._normalize_activity(act)
+                is_new = self.db.store_strava_activity(normalized)
+                if is_new:
+                    total_new += 1
+
+            log.info(
+                "Strava sync page %d: %d activities (%d new so far)",
+                page, len(raw), total_new,
+            )
+
+            if len(raw) < 50:
+                break  # last page (partial)
+
+            page += 1
+
+        log.info(
+            "Strava history sync complete: %d fetched, %d new (%d pages)",
+            total_fetched, total_new, page,
+        )
+        return {"fetched": total_fetched, "new": total_new, "pages": page}
 
     async def athlete(self) -> dict:
         """Fetch the authenticated athlete's profile."""

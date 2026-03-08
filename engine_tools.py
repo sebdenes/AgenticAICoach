@@ -192,10 +192,12 @@ class CoachTools:
         return {"days": days, "count": len(w), "records": w}
 
     async def _tool_get_activities(self, days: int = 7, activity_type: str = None) -> dict:
-        days = max(1, min(days, 90))
+        # Allow up to 10 years — Strava DB history (sync_all_history) covers the full range.
+        # Intervals.icu is still capped at 90 days via its own client.
+        days = max(1, min(days, 3650))
 
-        # Primary source: Intervals.icu (has TSS / training load)
-        intervals_acts = await self.iv.activities(days=days)
+        # Primary source: Intervals.icu (has TSS / training load, capped at 90 days)
+        intervals_acts = await self.iv.activities(days=min(days, 90))
 
         # Supplement: Strava fills gaps when Intervals hasn't synced yet
         strava_acts = []

@@ -795,7 +795,13 @@ class Handlers:
     # ── Strava Commands ────────────────────────────────────────
 
     async def cmd_strava(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-        """Connect Strava or show recent Strava activity status."""
+        """Connect Strava, show status, or sync full activity history.
+
+        Usage
+        -----
+        /strava        — show connection status + recent activities
+        /strava sync   — pull ALL historical activities into local DB
+        """
         if not self.strava:
             await update.message.reply_text(
                 "Strava integration not configured.\n"
@@ -803,11 +809,51 @@ class Handlers:
             )
             return
 
+        args = ctx.args or []
+
+        # ── /strava sync — full history backfill ──────────────────────────
+        if args and args[0].lower() == "sync":
+            if not self.strava.is_authenticated:
+                await update.message.reply_text(
+                    "Connect Strava first: /strava\n"
+                    "Then run /strava sync to pull your full history."
+                )
+                return
+
+            msg = await update.message.reply_text(
+                "⏳ Syncing full Strava history — paginating all activities...\n"
+                "_This may take 30–60 seconds for large histories._",
+                parse_mode="Markdown",
+            )
+            try:
+                result = await self.strava.sync_all_history()
+                total = self.db.count_strava_activities()
+                await msg.edit_text(
+                    f"✅ *Strava History Sync Complete*\n\n"
+                    f"• Activities fetched from API: {result['fetched']}\n"
+                    f"• Newly stored (no duplicates): {result['new']}\n"
+                    f"• Total in local DB: {total}\n"
+                    f"• API pages processed: {result['pages']}\n\n"
+                    f"_Your full Strava history is now available for coaching. "
+                    f"Intervals.icu data still takes priority when both sources "
+                    f"have the same activity (it carries TSS/training load)._",
+                    parse_mode="Markdown",
+                )
+            except Exception as exc:
+                log.error("Strava sync failed: %s", exc)
+                await msg.edit_text(f"❌ Sync failed: {exc}")
+            return
+
+        # ── /strava — status or auth link ────────────────────────────────
         if self.strava.is_authenticated:
             await self._typing(update)
             try:
                 acts = await self.strava.activities(days=3)
-                lines = [f"*Strava Connected* — {len(acts)} activities (last 3 days)\n"]
+                total_stored = self.db.count_strava_activities()
+                lines = [
+                    f"*Strava Connected* — {len(acts)} activities (last 3 days)\n"
+                    f"_Local DB: {total_stored} activities stored_\n"
+                ]
                 for a in acts[:5]:
                     name = a.get("name", "Activity")
                     sport = a.get("type", "")
@@ -819,6 +865,10 @@ class Handlers:
                         f"  *{sport}:* {name}\n"
                         f"  {dist_km:.1f}km · {dur_min}min{hr_str}"
                     )
+                if total_stored == 0:
+                    lines.append(
+                        "\n_Tip: run /strava sync to pull your full Strava history._"
+                    )
                 await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
             except Exception as exc:
                 log.error("Strava data fetch failed: %s", exc)
@@ -828,7 +878,8 @@ class Handlers:
                 "*Connect Strava*\n\n"
                 "[Click here to authorize](http://localhost:5050/strava/auth)\n\n"
                 "_After authorizing, Strava activities will supplement Intervals.icu — "
-                "your morning run will appear in coaching even before Intervals.icu syncs._",
+                "your morning run will appear in coaching even before Intervals.icu syncs._\n\n"
+                "_Then run /strava sync to pull your full activity history._",
                 parse_mode="Markdown",
             )
 
