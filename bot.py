@@ -71,6 +71,22 @@ def main():
         status = "authenticated" if whoop.is_authenticated else "awaiting auth (/whoop)"
         log.info(f"Whoop client initialized — {status}")
 
+    # Initialize Strava client (optional — OAuth via dashboard /strava/auth)
+    strava = None
+    if app_cfg.strava_client_id and app_cfg.strava_client_secret:
+        try:
+            from strava import StravaClient
+            strava = StravaClient(
+                app_cfg.strava_client_id,
+                app_cfg.strava_client_secret,
+                app_cfg.strava_redirect_uri,
+                db,
+            )
+            status = "authenticated" if strava.is_authenticated else "awaiting auth (/strava)"
+            log.info(f"Strava client initialized — {status}")
+        except Exception as e:
+            log.warning(f"Strava client init failed: {e}")
+
     # ── Phase 2 modules (engine takes ownership) ─────────────────────────────────
     _kb = None
     _weather_provider = None
@@ -115,9 +131,10 @@ def main():
         weather_engine=_weather_engine,
         rag=_rag,
         simulator=_simulator,
+        strava=strava,
     )
 
-    hdlrs = Handlers(iv, engine, db, athlete, app_cfg.telegram_chat_id, whoop=whoop)
+    hdlrs = Handlers(iv, engine, db, athlete, app_cfg.telegram_chat_id, whoop=whoop, strava=strava)
 
     log.info(f"Coach initialized for {athlete.name} | Race: {athlete.race_name} ({athlete.race_date})")
 

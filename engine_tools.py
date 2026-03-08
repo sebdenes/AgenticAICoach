@@ -144,6 +144,7 @@ class CoachTools:
         weather_engine=None,
         rag=None,
         simulator=None,
+        strava=None,
     ):
         self.iv = iv
         self.db = db
@@ -153,6 +154,7 @@ class CoachTools:
         self.weather_engine = weather_engine
         self.rag = rag
         self.simulator = simulator
+        self.strava = strava
 
     async def execute(self, name: str, inputs: dict) -> str:
         """Dispatch a tool call by name. Returns JSON string. Never raises."""
@@ -191,10 +193,38 @@ class CoachTools:
 
     async def _tool_get_activities(self, days: int = 7, activity_type: str = None) -> dict:
         days = max(1, min(days, 90))
-        a = await self.iv.activities(days=days)
+
+        # Primary source: Intervals.icu (has TSS / training load)
+        intervals_acts = await self.iv.activities(days=days)
+
+        # Supplement: Strava fills gaps when Intervals hasn't synced yet
+        strava_acts = []
+        if self.strava and self.strava.is_authenticated:
+            try:
+                strava_acts = await self.strava.activities(days=days)
+            except Exception as exc:
+                log.warning("Strava fetch skipped: %s", exc)
+
+        # Dedup: (date, sport) from Intervals wins; add Strava-only activities
+        intervals_keys = {
+            (a.get("start_date_local", "")[:10], (a.get("type") or "").lower())
+            for a in intervals_acts
+        }
+        for sa in strava_acts:
+            key = (
+                sa.get("start_date_local", "")[:10],
+                (sa.get("type") or "").lower(),
+            )
+            if key not in intervals_keys:
+                intervals_acts.append(sa)   # already normalized in StravaClient
+
+        all_acts = intervals_acts
         if activity_type:
-            a = [x for x in a if (x.get("type") or "").lower() == activity_type.lower()]
-        return {"days": days, "count": len(a), "activities": a}
+            all_acts = [
+                x for x in all_acts
+                if (x.get("type") or "").lower() == activity_type.lower()
+            ]
+        return {"days": days, "count": len(all_acts), "activities": all_acts}
 
     async def _tool_get_planned_events(self, days_ahead: int = 3) -> dict:
         days_ahead = max(1, min(days_ahead, 14))

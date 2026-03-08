@@ -17,9 +17,9 @@ from dataclasses import asdict
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 # ── Project imports ────────────────────────────────────────────
@@ -105,6 +105,7 @@ _periodization = None
 _weather_provider = None
 _weather_engine = None
 _performance_forecaster = None
+_strava_client = None
 
 STATIC_DIR = BASE_DIR / "static"
 
@@ -115,7 +116,7 @@ STATIC_DIR = BASE_DIR / "static"
 async def lifespan(app: FastAPI):
     """Initialise shared resources on startup, clean up on shutdown."""
     global db, intervals, whoop, app_cfg, athlete_cfg
-    global _periodization, _weather_provider, _weather_engine, _performance_forecaster
+    global _periodization, _weather_provider, _weather_engine, _performance_forecaster, _strava_client
 
     app_cfg = load_app_config()
     athlete_cfg = load_athlete_config()
@@ -165,6 +166,23 @@ async def lifespan(app: FastAPI):
         _weather_provider = None
         _weather_engine = None
         _performance_forecaster = None
+
+    # Strava client (optional — OAuth via /strava/auth endpoint)
+    try:
+        from strava import StravaClient as _StravaClient
+        if app_cfg.strava_client_id and app_cfg.strava_client_secret:
+            _strava_client = _StravaClient(
+                app_cfg.strava_client_id,
+                app_cfg.strava_client_secret,
+                app_cfg.strava_redirect_uri,
+                db,
+            )
+            log.info(
+                "Strava client initialized (authenticated=%s)",
+                _strava_client.is_authenticated,
+            )
+    except Exception as exc:
+        log.warning("Strava client init failed: %s", exc)
 
     yield
 
@@ -319,6 +337,38 @@ def _format_whoop_strain_summary(cycles: list) -> dict | None:
         "average_heart_rate": score.get("average_heart_rate"),
         "max_heart_rate": score.get("max_heart_rate"),
     }
+
+
+# ── Strava OAuth ───────────────────────────────────────────────
+
+@app.get("/strava/auth")
+async def strava_auth():
+    """Redirect user to Strava OAuth authorization page."""
+    if not _strava_client:
+        raise HTTPException(status_code=404, detail="Strava integration not configured")
+    return RedirectResponse(_strava_client.get_auth_url())
+
+
+@app.get("/strava/callback")
+async def strava_callback(code: str = None, error: str = None):
+    """Handle Strava OAuth callback — exchange code for tokens."""
+    if error or not code:
+        return HTMLResponse(
+            f"<h1>Strava Authorization Failed</h1><p>Error: {error or 'no code received'}</p>",
+            status_code=400,
+        )
+    if not _strava_client:
+        return HTMLResponse("<h1>Strava not configured</h1>", status_code=500)
+    ok = await _strava_client.exchange_code(code)
+    if ok:
+        return HTMLResponse(
+            "<h1>✅ Strava Connected!</h1>"
+            "<p>Your activities will now appear in coaching immediately after each workout — "
+            "no need to wait for Intervals.icu to sync.</p>"
+            "<p>You can close this window and return to Telegram.</p>"
+            "<script>setTimeout(()=>window.close(), 4000)</script>",
+        )
+    return HTMLResponse("<h1>Token exchange failed</h1><p>Please try /strava again.</p>", status_code=500)
 
 
 # ── Dashboard Snapshot ─────────────────────────────────────────

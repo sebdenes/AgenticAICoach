@@ -50,6 +50,9 @@ class AppConfig:
     whoop_client_id: str = ""
     whoop_client_secret: str = ""
     whoop_redirect_uri: str = "http://localhost:8765/whoop/callback"
+    strava_client_id: str = ""
+    strava_client_secret: str = ""
+    strava_redirect_uri: str = "http://localhost:5050/strava/callback"
     db_path: str = str(BASE_DIR / "coach.db")
     log_dir: str = str(BASE_DIR / "logs")
 
@@ -77,6 +80,8 @@ def load_app_config() -> AppConfig:
         anthropic_api_key=env.get("ANTHROPIC_API_KEY", ""),
         whoop_client_id=env.get("WHOOP_CLIENT_ID", ""),
         whoop_client_secret=env.get("WHOOP_CLIENT_SECRET", ""),
+        strava_client_id=env.get("STRAVA_CLIENT_ID", ""),
+        strava_client_secret=env.get("STRAVA_CLIENT_SECRET", ""),
     )
 
 

@@ -36,6 +36,7 @@ class CoachingEngine:
         weather_engine=None,
         rag=None,
         simulator=None,
+        strava=None,
     ):
         self.client = anthropic.Anthropic(api_key=api_key)
         self.athlete = athlete
@@ -49,6 +50,7 @@ class CoachingEngine:
             weather_engine=weather_engine,
             rag=rag,
             simulator=simulator,
+            strava=strava,
         )
         self._system = self._build_system()
 

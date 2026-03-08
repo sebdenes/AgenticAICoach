@@ -46,6 +46,7 @@ class Handlers:
         athlete: AthleteConfig,
         chat_id: str,
         whoop: WhoopClient = None,
+        strava=None,
     ):
         self.iv = iv
         self.engine = engine
@@ -53,6 +54,7 @@ class Handlers:
         self.athlete = athlete
         self.chat_id = chat_id
         self.whoop = whoop
+        self.strava = strava
         # Knowledge base (still needed for periodization)
         self._kb = KnowledgeBase()
         # Phase 2 modules
@@ -80,6 +82,7 @@ class Handlers:
         app.add_handler(CommandHandler("log", self.cmd_log_meal))
         app.add_handler(CommandHandler("macros", self.cmd_macros))
         app.add_handler(CommandHandler("whoop", self.cmd_whoop))
+        app.add_handler(CommandHandler("strava", self.cmd_strava))
         app.add_handler(CommandHandler("strain", self.cmd_strain))
         app.add_handler(CommandHandler("whoopsleep", self.cmd_whoop_sleep))
         app.add_handler(CommandHandler("explain", self.cmd_explain))
@@ -788,6 +791,46 @@ class Handlers:
         chart = sleep_chart(w)
         if chart:
             await self._send_chart(update, chart, "14-Day Sleep Trend (Intervals.icu)")
+
+    # ── Strava Commands ────────────────────────────────────────
+
+    async def cmd_strava(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        """Connect Strava or show recent Strava activity status."""
+        if not self.strava:
+            await update.message.reply_text(
+                "Strava integration not configured.\n"
+                "Add STRAVA_CLIENT_ID and STRAVA_CLIENT_SECRET to config.env."
+            )
+            return
+
+        if self.strava.is_authenticated:
+            await self._typing(update)
+            try:
+                acts = await self.strava.activities(days=3)
+                lines = [f"*Strava Connected* — {len(acts)} activities (last 3 days)\n"]
+                for a in acts[:5]:
+                    name = a.get("name", "Activity")
+                    sport = a.get("type", "")
+                    dist_km = (a.get("distance") or 0) / 1000
+                    dur_min = (a.get("moving_time") or 0) // 60
+                    avg_hr = a.get("average_heartrate")
+                    hr_str = f" | ❤️ {avg_hr:.0f}" if avg_hr else ""
+                    lines.append(
+                        f"  *{sport}:* {name}\n"
+                        f"  {dist_km:.1f}km · {dur_min}min{hr_str}"
+                    )
+                await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+            except Exception as exc:
+                log.error("Strava data fetch failed: %s", exc)
+                await update.message.reply_text(f"Strava connected but fetch failed: {exc}")
+        else:
+            await update.message.reply_text(
+                "*Connect Strava*\n\n"
+                "[Click here to authorize](http://localhost:5050/strava/auth)\n\n"
+                "_After authorizing, Strava activities will supplement Intervals.icu — "
+                "your morning run will appear in coaching even before Intervals.icu syncs._",
+                parse_mode="Markdown",
+            )
 
     # ── Inline Keyboard Callbacks ─────────────────────────────
 
