@@ -909,6 +909,7 @@
         loadTrainingPlan(),
         loadWeather(),
         loadForecast(),
+        loadStravaHistory(),
       ]);
     } catch (err) {
       console.error('[Coach] Refresh error:', err);
@@ -1136,6 +1137,144 @@
         },
       },
     });
+  }
+
+  // -----------------------------------------------------------
+  // Strava History
+  // -----------------------------------------------------------
+
+  async function loadStravaHistory() {
+    const [stats, acts] = await Promise.all([
+      fetchJSON('/api/strava/stats'),
+      fetchJSON('/api/strava/activities?days=30'),
+    ]);
+    if (!stats && !acts) return;
+
+    const total = stats ? stats.total_activities : 0;
+    setText('stravaHistoryPeriod',
+      total > 0
+        ? total + ' activities synced' + (stats.monthly && stats.monthly.length > 1
+            ? ' · since ' + stats.monthly[0].month : '')
+        : 'Run /strava sync in Telegram to populate history'
+    );
+
+    // Sport totals chips
+    if (stats && stats.by_sport && stats.by_sport.length) {
+      const sportEmojis = {
+        run: '🏃', ride: '🚴', virtualride: '🚴', swim: '🏊',
+        trailrun: '⛰️', mountainbikeride: '🚵', gravelride: '🚴',
+        workout: '💪', weighttraining: '🏋️', walk: '🚶', hike: '🥾',
+        alpineski: '⛷️', yoga: '🧘', rowing: '🚣',
+      };
+      const SPORT_COLORS = {
+        run: COLORS.green, ride: COLORS.blue, virtualride: COLORS.blue,
+        swim: COLORS.purple, workout: COLORS.yellow, weighttraining: COLORS.yellow,
+        trailrun: COLORS.green,
+      };
+      const container = document.getElementById('stravaSportTotals');
+      if (container) {
+        container.innerHTML = stats.by_sport.slice(0, 6).map(function (s) {
+          const key = s.sport.toLowerCase();
+          const emoji = sportEmojis[key] || '🏅';
+          const color = SPORT_COLORS[key] || COLORS.secondary;
+          const distStr = s.distance_km > 0 ? Math.round(s.distance_km) + ' km' : '';
+          const durH = Math.round(s.duration_min / 60);
+          const durStr = durH > 0 ? durH + 'h' : '';
+          const sub = [distStr, durStr, s.count + 'x'].filter(Boolean).join(' · ');
+          return '<div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);' +
+            'border-radius:8px;padding:8px 12px;min-width:100px;">' +
+            '<div style="font-size:18px;margin-bottom:2px;">' + emoji + '</div>' +
+            '<div style="font-size:12px;font-weight:600;color:' + color + '">' + escapeHtml(s.sport) + '</div>' +
+            '<div style="font-size:11px;color:var(--color-secondary,#9898ab);margin-top:2px;">' + escapeHtml(sub) + '</div>' +
+            '</div>';
+        }).join('');
+      }
+    }
+
+    // Monthly volume chart
+    if (stats && stats.monthly && stats.monthly.length > 1) {
+      const labels = stats.monthly.map(function (m) { return m.month.slice(0, 7); });
+      const distances = stats.monthly.map(function (m) { return Math.round(m.distance_km); });
+      const durations = stats.monthly.map(function (m) { return Math.round(m.duration_min / 60); });
+      const ctx = document.getElementById('stravaMonthlyChart');
+      if (ctx) {
+        if (charts.stravaMonthly) { charts.stravaMonthly.destroy(); }
+        charts.stravaMonthly = new Chart(ctx, {
+          type: 'bar',
+          data: {
+            labels: labels,
+            datasets: [
+              {
+                label: 'Distance (km)',
+                data: distances,
+                backgroundColor: COLORS.blueDim,
+                borderColor: COLORS.blue,
+                borderWidth: 1,
+                borderRadius: 3,
+                yAxisID: 'y',
+              },
+              {
+                label: 'Hours',
+                data: durations,
+                type: 'line',
+                borderColor: COLORS.green,
+                backgroundColor: 'transparent',
+                pointRadius: 2,
+                tension: 0.4,
+                yAxisID: 'y1',
+              },
+            ],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: { legend: { display: true, labels: { boxWidth: 10, padding: 12, font: { size: 10 } } } },
+            scales: {
+              x: { grid: { color: COLORS.grid }, ticks: { font: { size: 10 }, maxTicksLimit: 12 } },
+              y:  { grid: { color: COLORS.grid }, ticks: { font: { size: 10 } }, title: { display: false } },
+              y1: { position: 'right', grid: { drawOnChartArea: false }, ticks: { font: { size: 10 } } },
+            },
+          },
+        });
+      }
+    }
+
+    // Recent activity list (last 30 days)
+    if (acts && acts.length) {
+      const listEl = document.getElementById('stravaActivityList');
+      if (listEl) {
+        const sportEmojis2 = {
+          run: '🏃', ride: '🚴', virtualride: '🚴', swim: '🏊',
+          trailrun: '⛰️', mountainbikeride: '🚵', gravelride: '🚴',
+          workout: '💪', weighttraining: '🏋️', walk: '🚶', hike: '🥾',
+        };
+        listEl.innerHTML = acts.slice(0, 15).map(function (a) {
+          const key = (a.type || '').toLowerCase();
+          const emoji = sportEmojis2[key] || '🏅';
+          const dist = a.distance_km > 0 ? a.distance_km.toFixed(1) + ' km' : '';
+          const dur = a.duration_min > 0 ? fmtDuration(a.duration_min) : '';
+          const pace = a.pace_display || '';
+          const hr = a.avg_hr ? '❤️ ' + Math.round(a.avg_hr) : '';
+          const elev = a.elevation_m > 20 ? '↑' + Math.round(a.elevation_m) + 'm' : '';
+          const meta = [dist, dur, pace, hr, elev].filter(Boolean).join(' · ');
+          return '<div style="display:flex;align-items:flex-start;gap:8px;padding:6px 0;' +
+            'border-bottom:1px solid rgba(255,255,255,0.05);">' +
+            '<span style="font-size:16px;flex-shrink:0;">' + emoji + '</span>' +
+            '<div style="flex:1;min-width:0;">' +
+            '<div style="font-size:13px;font-weight:500;color:#f0f0f5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' +
+              escapeHtml(a.name || a.type || 'Activity') + '</div>' +
+            '<div style="font-size:11px;color:#9898ab;margin-top:1px;">' +
+              escapeHtml(fmtDate(a.date)) + (meta ? ' · ' + escapeHtml(meta) : '') + '</div>' +
+            '</div></div>';
+        }).join('');
+      }
+    } else {
+      const listEl = document.getElementById('stravaActivityList');
+      if (listEl) listEl.innerHTML = '<div class="empty-state">No activities in last 30 days — run /strava sync to populate</div>';
+    }
+
+    revealCard('cardStravaHistory');
   }
 
   // -----------------------------------------------------------

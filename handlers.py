@@ -883,6 +883,121 @@ class Handlers:
                 parse_mode="Markdown",
             )
 
+    # ── Post-Activity Notifications ───────────────────────────
+
+    # Sports that warrant a coaching notification after completion
+    _NOTIFY_SPORTS = {
+        "run", "ride", "virtualride", "swim", "workout", "trailrun",
+        "walk", "hike", "mountainbikeride", "gravelride", "rowing",
+        "weighttraining", "yoga", "crossfit", "alpineski", "nordicski",
+    }
+
+    async def run_activity_notification(self, bot):
+        """Poll Strava for newly completed activities and send coaching analysis.
+
+        Runs every 5 minutes via APScheduler. Uses DB state key
+        'last_notified_activity_ts' to track the last activity notified.
+        On first run, initialises the sentinel to now (avoids flooding old activity data).
+        """
+        if not self.strava or not self.strava.is_authenticated:
+            return
+
+        try:
+            last_ts = self.db.get_state("last_notified_activity_ts")
+
+            # First run — set sentinel to now so we only notify future activities
+            if last_ts is None:
+                self.db.set_state(
+                    "last_notified_activity_ts",
+                    datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
+                )
+                log.info("Activity notification: sentinel initialized — will notify future activities")
+                return
+
+            # Fetch today's Strava activities (last 24h to catch any timing drift)
+            recent = await self.strava.activities(days=1)
+            if not recent:
+                return
+
+            # Find activities newer than the last notified timestamp
+            new_acts = [
+                a for a in recent
+                if a.get("start_date_local", "") > last_ts
+                and (a.get("type") or "").lower() in self._NOTIFY_SPORTS
+                and (a.get("moving_time") or 0) >= 300   # ≥ 5 min
+            ]
+            if not new_acts:
+                return
+
+            # Process oldest-first so sentinel advances correctly
+            new_acts.sort(key=lambda x: x.get("start_date_local", ""))
+            for act in new_acts:
+                await self._notify_activity(bot, act)
+                self.db.set_state(
+                    "last_notified_activity_ts",
+                    act.get("start_date_local", ""),
+                )
+
+        except Exception as exc:
+            log.error("Activity notification check failed: %s", exc)
+
+    async def _notify_activity(self, bot, act: dict):
+        """Generate and send a post-activity coaching analysis for one activity."""
+        sport    = act.get("type", "Activity")
+        name     = act.get("name", sport)
+        dist_km  = (act.get("distance") or 0) / 1000
+        dur_min  = (act.get("moving_time") or 0) // 60
+        avg_hr   = act.get("average_heartrate")
+        max_hr   = act.get("max_heartrate")
+        elev     = act.get("total_elevation_gain") or 0
+        avg_spd  = act.get("average_speed") or 0
+        avg_w    = act.get("average_watts")
+        np_w     = act.get("weighted_average_watts")
+
+        # Build a human-readable stats string for header + prompt
+        stats = [f"{dist_km:.2f}km", f"{dur_min}min"]
+        sport_lc = sport.lower()
+        if avg_spd and sport_lc in ("run", "trailrun", "walk", "hike"):
+            secs_km = 1000 / avg_spd if avg_spd else 0
+            stats.append(f"{int(secs_km // 60)}:{int(secs_km % 60):02d}/km")
+        elif avg_spd and sport_lc in ("ride", "virtualride", "mountainbikeride", "gravelride"):
+            stats.append(f"{avg_spd * 3.6:.1f}km/h")
+        if avg_hr:
+            stats.append(f"avg HR {avg_hr:.0f}")
+        if max_hr:
+            stats.append(f"max HR {max_hr:.0f}")
+        if np_w:
+            stats.append(f"NP {np_w:.0f}W")
+        elif avg_w:
+            stats.append(f"avg {avg_w:.0f}W")
+        if elev > 20:
+            stats.append(f"{elev:.0f}m elev")
+        stats_str = " · ".join(stats)
+
+        prompt = (
+            f"I just completed a {sport}: '{name}' ({stats_str}). "
+            "Analyse this workout in the context of my current training load and race "
+            "preparation. Cover: "
+            "(1) how does this fit my plan and current fatigue/fitness state, "
+            "(2) key observations about the data (pacing, HR, power if available), "
+            "(3) immediate recovery priorities for the next 24h, "
+            "(4) any adjustments to tomorrow's planned session based on this effort."
+        )
+
+        try:
+            log.info(
+                "Activity notification: %s '%s' %.1fkm %dmin",
+                sport, name, dist_km, dur_min,
+            )
+            text = await self.engine.respond(prompt)
+            await bot.send_message(
+                chat_id=self.chat_id,
+                text=f"🏃 *{name}*\n_{stats_str}_\n\n{text}",
+                parse_mode="Markdown",
+            )
+        except Exception as exc:
+            log.error("Activity notification send failed: %s", exc)
+
     # ── Inline Keyboard Callbacks ─────────────────────────────
 
     async def on_callback(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):

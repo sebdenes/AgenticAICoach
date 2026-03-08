@@ -1027,6 +1027,96 @@ async def api_performance_forecast(days: int = Query(default=14, ge=7, le=60)):
         return {"error": str(exc)}
 
 
+# ── Strava History ────────────────────────────────────────────
+
+@app.get("/api/strava/activities")
+async def strava_activity_history(days: int = Query(default=90, ge=1, le=3650)):
+    """Activity history from local Strava DB (populated by /strava sync).
+
+    Supports up to 10 years of history — unlike Intervals.icu which caps at 365 days.
+    Run /strava sync in Telegram first to populate the local database.
+    """
+    acts = db.get_strava_activities(days=days)
+    result = []
+    for a in acts:
+        dist_km = (a.get("distance") or 0) / 1000
+        dur_min = (a.get("moving_time") or 0) // 60
+        avg_spd = a.get("average_speed") or 0
+        sport_lc = (a.get("type") or "").lower()
+
+        # Compute pace/speed in display-friendly format
+        pace_display = None
+        if avg_spd > 0 and sport_lc in ("run", "trailrun", "walk", "hike"):
+            secs_km = 1000 / avg_spd
+            pace_display = f"{int(secs_km // 60)}:{int(secs_km % 60):02d}/km"
+        elif avg_spd > 0 and sport_lc in ("ride", "virtualride", "mountainbikeride", "gravelride"):
+            pace_display = f"{avg_spd * 3.6:.1f} km/h"
+
+        result.append({
+            "date": (a.get("start_date_local") or "")[:10],
+            "type": a.get("type"),
+            "name": a.get("name", ""),
+            "duration_min": dur_min,
+            "distance_km": round(dist_km, 2),
+            "avg_hr": a.get("average_heartrate"),
+            "max_hr": a.get("max_heartrate"),
+            "elevation_m": a.get("total_elevation_gain"),
+            "avg_watts": a.get("average_watts"),
+            "np_watts": a.get("weighted_average_watts"),
+            "suffer_score": a.get("suffer_score"),
+            "pace_display": pace_display,
+            "strava_id": a.get("strava_id"),
+        })
+    return result
+
+
+@app.get("/api/strava/stats")
+async def strava_stats():
+    """All-time Strava stats: totals by sport and monthly volume breakdown.
+
+    Reads from local strava_activities DB — populated by /strava sync.
+    """
+    from collections import defaultdict
+
+    all_acts = db.get_strava_activities()   # all time, no date filter
+
+    sport_totals: dict = defaultdict(lambda: {"count": 0, "distance_km": 0.0, "duration_min": 0})
+    monthly: dict = defaultdict(lambda: {"distance_km": 0.0, "duration_min": 0, "count": 0})
+
+    for a in all_acts:
+        sport    = (a.get("type") or "Unknown")
+        dist_km  = (a.get("distance") or 0) / 1000
+        dur_min  = (a.get("moving_time") or 0) // 60
+        month    = (a.get("start_date_local") or "")[:7]   # YYYY-MM
+
+        sport_totals[sport]["count"]        += 1
+        sport_totals[sport]["distance_km"]  += dist_km
+        sport_totals[sport]["duration_min"] += dur_min
+
+        if month:
+            monthly[month]["distance_km"]  += dist_km
+            monthly[month]["duration_min"] += dur_min
+            monthly[month]["count"]        += 1
+
+    # Keep last 24 months sorted
+    monthly_sorted = [
+        {"month": k, **v}
+        for k, v in sorted(monthly.items())
+    ][-24:]
+
+    # Sort sports by distance descending
+    sport_list = [
+        {"sport": k, **{sk: round(sv, 1) if isinstance(sv, float) else sv for sk, sv in v.items()}}
+        for k, v in sorted(sport_totals.items(), key=lambda x: -x[1]["distance_km"])
+    ]
+
+    return {
+        "total_activities": len(all_acts),
+        "by_sport": sport_list,
+        "monthly": monthly_sorted,
+    }
+
+
 # ── Static Files & SPA ────────────────────────────────────────
 
 @app.get("/")

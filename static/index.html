@@ -395,6 +395,38 @@
       </div>
     </section>
 
+    <!-- ── Strava History ─────────────────────────── -->
+    <section class="row row-full" id="sectionStravaHistory">
+      <div class="card card-chart" id="cardStravaHistory">
+        <div class="card-skeleton">
+          <div class="skeleton-line skeleton-sm"></div>
+          <div class="skeleton-line skeleton-lg" style="height: 160px; margin-top: 12px;"></div>
+        </div>
+        <div class="card-content hidden">
+          <div class="card-chart-header">
+            <h3 class="chart-title">Strava History</h3>
+            <span class="chart-period" id="stravaHistoryPeriod">Loading…</span>
+          </div>
+
+          <!-- Sport totals row -->
+          <div id="stravaSportTotals" style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px;"></div>
+
+          <!-- Monthly volume chart -->
+          <div class="chart-container" style="height: 180px;">
+            <canvas id="stravaMonthlyChart"></canvas>
+          </div>
+
+          <!-- Recent activity list -->
+          <div style="margin-top:16px;">
+            <div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--color-secondary,#9898ab);margin-bottom:8px;">
+              Recent Activities
+            </div>
+            <div id="stravaActivityList"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
   </main>
 
   <script src="/static/app.js"></script>

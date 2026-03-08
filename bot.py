@@ -11,6 +11,7 @@ import logging
 from telegram.ext import Application
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.interval import IntervalTrigger
 
 from config import load_app_config, load_athlete_config, TZ, BASE_DIR
 from database import Database
@@ -206,10 +207,18 @@ def main():
             id="weekly_retrain",
         )
 
+        # Post-activity Strava notification — every 5 minutes
+        scheduler.add_job(
+            hdlrs.run_activity_notification,
+            IntervalTrigger(minutes=5),
+            args=[application.bot],
+            id="activity_check",
+        )
+
         scheduler.start()
         log.info(
             "Scheduler started — check-ins 8:30/13:00/22:00 + Sunday report "
-            "+ Monday retrain (Europe/Paris)"
+            "+ Monday retrain + activity notifications every 5min (Europe/Paris)"
         )
 
     # Build Telegram app
