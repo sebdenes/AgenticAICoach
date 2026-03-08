@@ -22,6 +22,42 @@ PROMPTS_DIR = Path(__file__).parent / "prompts"
 MAX_TOOL_ITERATIONS = 10
 MODEL = "claude-sonnet-4-20250514"
 MAX_TOKENS = 2000
+MAX_API_RETRIES = 3
+
+
+# ── API call with retry ──────────────────────────────────────────────────────
+
+async def _api_call_with_retry(client, max_retries: int = MAX_API_RETRIES, **kwargs):
+    """Call Anthropic API with exponential backoff on transient errors."""
+    for attempt in range(max_retries + 1):
+        try:
+            return client.messages.create(**kwargs)
+        except (
+            anthropic.RateLimitError,
+            anthropic.InternalServerError,
+            anthropic.APIConnectionError,
+        ) as e:
+            if attempt == max_retries:
+                raise
+            wait = 2 ** attempt
+            log.warning(
+                "Anthropic API retry %d/%d (wait %ds): %s",
+                attempt + 1, max_retries, wait, e,
+            )
+            await asyncio.sleep(wait)
+
+
+def _extract_usage(response) -> dict:
+    """Extract token usage from an Anthropic API response."""
+    usage = getattr(response, "usage", None)
+    if not usage:
+        return {"input_tokens": 0, "output_tokens": 0, "cache_read": 0, "cache_write": 0}
+    return {
+        "input_tokens": getattr(usage, "input_tokens", 0) or 0,
+        "output_tokens": getattr(usage, "output_tokens", 0) or 0,
+        "cache_read": getattr(usage, "cache_read_input_tokens", 0) or 0,
+        "cache_write": getattr(usage, "cache_creation_input_tokens", 0) or 0,
+    }
 
 
 # ── Reusable tool-use loop ────────────────────────────────────────────────────
@@ -35,25 +71,36 @@ async def run_tool_loop(
     messages: list[dict],
     max_iterations: int = MAX_TOOL_ITERATIONS,
     max_tokens: int = MAX_TOKENS,
-) -> str:
-    """Run the agentic tool-use loop and return final text.
+) -> tuple[str, dict]:
+    """Run the agentic tool-use loop and return (final_text, usage_totals).
 
     Shared by CoachingEngine and specialized agents (agents.py).
     """
+    total_usage = {"input_tokens": 0, "output_tokens": 0, "cache_read": 0, "cache_write": 0}
     response = None
+
     for iteration in range(max_iterations):
-        response = client.messages.create(
+        response = await _api_call_with_retry(
+            client,
             model=model,
             max_tokens=max_tokens,
             system=system,
             tools=tool_schemas,
             messages=messages,
         )
+
+        # Accumulate token usage
+        usage = _extract_usage(response)
+        for k in total_usage:
+            total_usage[k] += usage[k]
+
         log.debug(
-            "Tool loop iteration %d: stop_reason=%s tool_calls=%d",
+            "Tool loop iteration %d: stop_reason=%s tool_calls=%d tokens=%d+%d",
             iteration + 1,
             response.stop_reason,
             sum(1 for b in response.content if b.type == "tool_use"),
+            usage["input_tokens"],
+            usage["output_tokens"],
         )
 
         if response.stop_reason != "tool_use":
@@ -85,13 +132,13 @@ async def run_tool_loop(
         log.warning("Tool-use loop hit max iterations (%d)", max_iterations)
 
     if response is None:
-        return ""
+        return "", total_usage
 
     final_text = ""
     for block in response.content:
         if hasattr(block, "text"):
             final_text += block.text
-    return final_text
+    return final_text, total_usage
 
 
 class CoachingEngine:
@@ -252,13 +299,21 @@ class CoachingEngine:
         history = self._load_history()
         messages = history + [{"role": "user", "content": initial_content}]
 
-        final_text = await run_tool_loop(
+        final_text, usage = await run_tool_loop(
             client=self.client,
             model=MODEL,
             system=self._system,
             tools=self.tools,
             tool_schemas=TOOL_SCHEMAS,
             messages=messages,
+        )
+
+        # Log API usage
+        self.db.log_api_usage(
+            provider="anthropic", model=MODEL, endpoint="respond",
+            input_tokens=usage["input_tokens"], output_tokens=usage["output_tokens"],
+            cache_read_tokens=usage["cache_read"], cache_write_tokens=usage["cache_write"],
+            agent="single_engine",
         )
 
         if not final_text:
@@ -276,11 +331,19 @@ class CoachingEngine:
         """One-shot analysis without conversation history (for modules).
         Kept for backward compat with any callers that use engine.analyze()."""
         try:
-            resp = self.client.messages.create(
+            resp = await _api_call_with_retry(
+                self.client,
                 model=MODEL,
                 max_tokens=MAX_TOKENS,
                 system=self._system,
                 messages=[{"role": "user", "content": prompt}],
+            )
+            usage = _extract_usage(resp)
+            self.db.log_api_usage(
+                provider="anthropic", model=MODEL, endpoint="analyze",
+                input_tokens=usage["input_tokens"], output_tokens=usage["output_tokens"],
+                cache_read_tokens=usage["cache_read"], cache_write_tokens=usage["cache_write"],
+                agent="single_engine",
             )
             for block in resp.content:
                 if hasattr(block, "text"):

@@ -464,6 +464,64 @@ class Database:
                 (decay_factor, cutoff, cutoff),
             )
 
+    # ── API Usage Tracking ─────────────────────────────────
+
+    # Cost per 1K tokens (USD) — update when pricing changes
+    _COST_PER_1K = {
+        "claude-sonnet-4-20250514": {"input": 0.003, "output": 0.015},
+        "claude-haiku-4-5-20251001": {"input": 0.0008, "output": 0.004},
+    }
+
+    def log_api_usage(self, provider: str, model: str = None, endpoint: str = None,
+                      input_tokens: int = 0, output_tokens: int = 0,
+                      cache_read_tokens: int = 0, cache_write_tokens: int = 0,
+                      agent: str = None, request_id: str = None):
+        """Log an API call with token usage and computed cost."""
+        cost = 0.0
+        if model and model in self._COST_PER_1K:
+            rates = self._COST_PER_1K[model]
+            cost = (input_tokens * rates["input"] + output_tokens * rates["output"]) / 1000
+        with self._conn() as conn:
+            conn.execute(
+                "INSERT INTO api_usage "
+                "(timestamp, provider, model, endpoint, input_tokens, output_tokens, "
+                "cache_read_tokens, cache_write_tokens, cost_usd, agent, request_id) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (datetime.now().isoformat(), provider, model, endpoint,
+                 input_tokens, output_tokens, cache_read_tokens, cache_write_tokens,
+                 cost, agent, request_id),
+            )
+
+    def get_usage_summary(self, days: int = 7) -> list[dict]:
+        """Aggregate API usage by provider/model over the last N days."""
+        cutoff = (datetime.now() - timedelta(days=days)).isoformat()
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT provider, model, COUNT(*) as calls, "
+                "SUM(input_tokens) as total_input, SUM(output_tokens) as total_output, "
+                "SUM(cache_read_tokens) as total_cache_read, "
+                "SUM(cache_write_tokens) as total_cache_write, "
+                "SUM(cost_usd) as total_cost "
+                "FROM api_usage WHERE timestamp >= ? "
+                "GROUP BY provider, model ORDER BY total_cost DESC",
+                (cutoff,),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_daily_cost(self, days: int = 30) -> list[dict]:
+        """Daily cost breakdown over the last N days."""
+        cutoff = (datetime.now() - timedelta(days=days)).isoformat()
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT DATE(timestamp) as date, provider, "
+                "SUM(input_tokens) as input_tokens, SUM(output_tokens) as output_tokens, "
+                "SUM(cost_usd) as cost_usd, COUNT(*) as calls "
+                "FROM api_usage WHERE timestamp >= ? "
+                "GROUP BY DATE(timestamp), provider ORDER BY date DESC",
+                (cutoff,),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
 
 # ── Schema ────────────────────────────────────────────────
 

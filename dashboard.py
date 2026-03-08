@@ -1380,6 +1380,24 @@ async def strava_stats():
     }
 
 
+# ── API Usage ─────────────────────────────────────────────────
+
+@app.get("/api/usage")
+async def api_usage(days: int = 7):
+    """API usage summary with token counts and costs."""
+    summary = db.get_usage_summary(days=days)
+    daily = db.get_daily_cost(days=days)
+    total_cost = sum(row.get("total_cost", 0) or 0 for row in summary)
+    total_calls = sum(row.get("calls", 0) or 0 for row in summary)
+    return {
+        "period_days": days,
+        "total_cost_usd": round(total_cost, 4),
+        "total_calls": total_calls,
+        "by_provider": summary,
+        "daily": daily,
+    }
+
+
 # ── Static Files & SPA ────────────────────────────────────────
 
 @app.get("/")

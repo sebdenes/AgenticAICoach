@@ -9,6 +9,14 @@ BASE_DIR = Path(__file__).parent
 TZ = ZoneInfo("Europe/Paris")
 
 
+class ConfigError(Exception):
+    """Configuration validation error with list of issues."""
+
+    def __init__(self, errors: list[str]):
+        self.errors = errors
+        super().__init__(f"Config errors: {'; '.join(errors)}")
+
+
 @dataclass
 class AthleteConfig:
     name: str = ""
@@ -39,6 +47,15 @@ class AthleteConfig:
     latitude: float = 0.0
     longitude: float = 0.0
 
+    def validate(self) -> list[str]:
+        """Return list of validation errors. Empty = valid."""
+        errors = []
+        if not self.name:
+            errors.append("Athlete name is required in athlete_profile.json")
+        if not self.race_date:
+            errors.append("Race date is required (target_race.date)")
+        return errors
+
 
 @dataclass
 class AppConfig:
@@ -55,6 +72,22 @@ class AppConfig:
     strava_redirect_uri: str = "http://localhost:3000/strava/callback"
     db_path: str = str(BASE_DIR / "coach.db")
     log_dir: str = str(BASE_DIR / "logs")
+    log_level: str = "INFO"
+
+    def validate(self) -> list[str]:
+        """Return list of validation errors. Empty = valid."""
+        errors = []
+        required = {
+            "INTERVALS_API_KEY": self.intervals_api_key,
+            "INTERVALS_ATHLETE_ID": self.intervals_athlete_id,
+            "TELEGRAM_BOT_TOKEN": self.telegram_bot_token,
+            "TELEGRAM_CHAT_ID": self.telegram_chat_id,
+            "ANTHROPIC_API_KEY": self.anthropic_api_key,
+        }
+        for name, value in required.items():
+            if not value:
+                errors.append(f"{name} is required in config.env")
+        return errors
 
 
 def load_env() -> dict:
@@ -82,6 +115,7 @@ def load_app_config() -> AppConfig:
         whoop_client_secret=env.get("WHOOP_CLIENT_SECRET", ""),
         strava_client_id=env.get("STRAVA_CLIENT_ID", ""),
         strava_client_secret=env.get("STRAVA_CLIENT_SECRET", ""),
+        log_level=env.get("LOG_LEVEL", "INFO"),
     )
 
 

@@ -13,26 +13,18 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
-from config import load_app_config, load_athlete_config, TZ, BASE_DIR
+from config import load_app_config, load_athlete_config, ConfigError, TZ, BASE_DIR
 from database import Database
 from intervals import IntervalsClient
 from engine import CoachingEngine
 from whoop import WhoopClient, start_oauth_server
 from handlers import Handlers
+from logging_config import setup_logging
 
-# ── Logging ──────────────────────────────────────────────────
+# ── Logging (re-configured after config load) ───────────────
 
 LOG_DIR = BASE_DIR / "logs"
-LOG_DIR.mkdir(exist_ok=True)
-
-logging.basicConfig(
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    level=logging.INFO,
-    handlers=[
-        logging.StreamHandler(),
-        logging.FileHandler(LOG_DIR / "coach.log"),
-    ],
-)
+setup_logging(LOG_DIR)
 log = logging.getLogger("coach")
 
 
@@ -43,17 +35,19 @@ def main():
     app_cfg = load_app_config()
     athlete = load_athlete_config()
 
-    required = {
-        "INTERVALS_API_KEY": app_cfg.intervals_api_key,
-        "INTERVALS_ATHLETE_ID": app_cfg.intervals_athlete_id,
-        "TELEGRAM_BOT_TOKEN": app_cfg.telegram_bot_token,
-        "TELEGRAM_CHAT_ID": app_cfg.telegram_chat_id,
-        "ANTHROPIC_API_KEY": app_cfg.anthropic_api_key,
-    }
-    missing = [k for k, v in required.items() if not v]
-    if missing:
-        log.error(f"Missing config in config.env: {', '.join(missing)}")
+    # Validate configuration
+    errors = app_cfg.validate()
+    athlete_errors = athlete.validate()
+    if athlete_errors:
+        for e in athlete_errors:
+            log.warning(f"Athlete config: {e}")
+    if errors:
+        log.error(f"Config validation failed: {'; '.join(errors)}")
         return
+
+    # Re-configure logging with configured level
+    if app_cfg.log_level != "INFO":
+        setup_logging(LOG_DIR, level=app_cfg.log_level)
 
     # Initialize components
     db = Database(app_cfg.db_path)

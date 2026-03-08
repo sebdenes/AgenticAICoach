@@ -14,7 +14,7 @@ import anthropic
 
 from agents import classify_intent, get_agent
 from config import AthleteConfig, TZ
-from engine import run_tool_loop, _make_initial_message, _normalize_history, MODEL, MAX_TOKENS
+from engine import run_tool_loop, _make_initial_message, _normalize_history, _api_call_with_retry, _extract_usage, MODEL, MAX_TOKENS
 from engine_tools import CoachTools, TOOL_SCHEMAS
 
 if TYPE_CHECKING:
@@ -209,13 +209,21 @@ class AgentOrchestrator:
         history = self._load_history()
         messages = history + [{"role": "user", "content": initial_content}]
 
-        final_text = await run_tool_loop(
+        final_text, usage = await run_tool_loop(
             client=self.client,
             model=MODEL,
             system=system,
             tools=self.tools,
             tool_schemas=tool_schemas,
             messages=messages,
+        )
+
+        # Log API usage with agent name
+        self.db.log_api_usage(
+            provider="anthropic", model=MODEL, endpoint="respond",
+            input_tokens=usage["input_tokens"], output_tokens=usage["output_tokens"],
+            cache_read_tokens=usage["cache_read"], cache_write_tokens=usage["cache_write"],
+            agent=agent_name,
         )
 
         if not final_text:
@@ -238,20 +246,37 @@ class AgentOrchestrator:
     async def _extract_memories(self, user_message: str, assistant_response: str):
         """Extract memories from the conversation (async, non-blocking)."""
         try:
-            await self.memory.extract_memories(
+            mem_usage = await self.memory.extract_memories(
                 user_message, assistant_response, anthropic_client=self.client
             )
+            if mem_usage:
+                self.db.log_api_usage(
+                    provider="anthropic",
+                    model=mem_usage.get("model", "claude-haiku-4-5-20251001"),
+                    endpoint="memory_extraction",
+                    input_tokens=mem_usage.get("input_tokens", 0),
+                    output_tokens=mem_usage.get("output_tokens", 0),
+                    agent="memory_extraction",
+                )
         except Exception as exc:
             log.debug("Memory extraction failed (non-critical): %s", exc)
 
     async def analyze(self, prompt: str, data_context: str = "") -> str:
         """One-shot analysis without conversation history (backward compat)."""
         try:
-            resp = self.client.messages.create(
+            resp = await _api_call_with_retry(
+                self.client,
                 model=MODEL,
                 max_tokens=MAX_TOKENS,
                 system=self._base_system,
                 messages=[{"role": "user", "content": prompt}],
+            )
+            usage = _extract_usage(resp)
+            self.db.log_api_usage(
+                provider="anthropic", model=MODEL, endpoint="analyze",
+                input_tokens=usage["input_tokens"], output_tokens=usage["output_tokens"],
+                cache_read_tokens=usage["cache_read"], cache_write_tokens=usage["cache_write"],
+                agent="orchestrator",
             )
             for block in resp.content:
                 if hasattr(block, "text"):

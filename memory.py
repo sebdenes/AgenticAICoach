@@ -166,14 +166,16 @@ class AthleteMemory:
 
     async def extract_memories(
         self, user_message: str, assistant_response: str, anthropic_client=None
-    ):
+    ) -> dict | None:
         """Extract notable facts from a conversation exchange using Claude Haiku.
 
         This runs async and is designed to be fire-and-forget (non-blocking).
+        Returns usage dict with token counts, or None.
         """
         if not anthropic_client:
-            return
+            return None
 
+        haiku_model = "claude-haiku-4-5-20251001"
         prompt = EXTRACTION_PROMPT.format(
             user_message=user_message[:1000],
             assistant_response=assistant_response[:2000],
@@ -181,10 +183,20 @@ class AthleteMemory:
 
         try:
             resp = anthropic_client.messages.create(
-                model="claude-haiku-4-5-20251001",
+                model=haiku_model,
                 max_tokens=500,
                 messages=[{"role": "user", "content": prompt}],
             )
+
+            # Extract usage info
+            usage_info = None
+            resp_usage = getattr(resp, "usage", None)
+            if resp_usage:
+                usage_info = {
+                    "model": haiku_model,
+                    "input_tokens": getattr(resp_usage, "input_tokens", 0) or 0,
+                    "output_tokens": getattr(resp_usage, "output_tokens", 0) or 0,
+                }
 
             text = ""
             for block in resp.content:
@@ -192,11 +204,11 @@ class AthleteMemory:
                     text += block.text
 
             if not text.strip():
-                return
+                return usage_info
 
             memories = json.loads(text.strip())
             if not isinstance(memories, list):
-                return
+                return usage_info
 
             for mem in memories:
                 if not isinstance(mem, dict):
@@ -208,10 +220,14 @@ class AthleteMemory:
                 if mem_type and content:
                     self.store(mem_type, content, importance)
 
+            return usage_info
+
         except json.JSONDecodeError:
             log.debug("Memory extraction returned non-JSON — skipping")
+            return None
         except Exception as exc:
             log.warning("Memory extraction failed: %s", exc)
+            return None
 
     def get_context_block(self, query: str, max_memories: int = 5) -> str:
         """Retrieve relevant memories and format as a system prompt block.
