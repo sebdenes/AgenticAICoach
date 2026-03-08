@@ -558,45 +558,53 @@ class PeriodizationEngine:
         tp: str,
         hr_at_mp: str,
     ) -> tuple[str, str, str]:
-        """Return (name, description, zone) for a session."""
+        """Return (name, description, zone) for a session.
+
+        Descriptions use the Intervals.icu workout builder syntax so the
+        Intervals engine can parse them into structured steps with pace/HR
+        targets and auto-generate workout graphs.
+
+        Format rules:
+          - Section headers: ``Warmup``, ``Main Set Nx``, ``Cooldown``
+          - Steps: ``- <duration> <target>``
+          - Duration: ``10m``, ``30s``, ``5m30s``
+          - Pace targets: ``5:30/km Pace``
+          - HR targets: ``Z2 HR``
+          - Cadence: ``90rpm``
+        """
+        # Helper: add a slower margin to easy pace for recovery
+        def _slower_pace(pace_str: str, add_secs: int = 30) -> str:
+            secs = _pace_to_seconds(pace_str) + add_secs
+            return f"{secs // 60}:{secs % 60:02d}"
 
         if session_type == "easy_run":
             return (
                 "Easy Run",
-                (
-                    f"Easy aerobic run.\n"
-                    f"- {duration}min at easy pace ({ep}/km)\n"
-                    f"- HR Zone 1-2 (<{_hr_ceiling(hr_at_mp, 0.85)}bpm)\n"
-                    f"- Focus on relaxed form and cadence 170-180spm\n"
-                    f"- Should be conversational"
-                ),
+                f"- {duration}m {ep}/km Pace",
                 "z2",
             )
 
         if session_type == "recovery_run":
+            slow = _slower_pace(ep, 30)
             return (
                 "Recovery Run",
-                (
-                    f"Very easy recovery run.\n"
-                    f"- {duration}min very easy\n"
-                    f"- Pace slower than {ep}/km\n"
-                    f"- HR Zone 1 (<{_hr_ceiling(hr_at_mp, 0.80)}bpm)\n"
-                    f"- Walk breaks OK if needed"
-                ),
+                f"- {duration}m {slow}/km Pace",
                 "z1",
             )
 
         if session_type == "tempo_run":
-            tempo_dur = max(10, duration - 20)  # warmup + cooldown
+            tempo_dur = max(10, duration - 20)
             return (
                 "Tempo Run",
                 (
-                    f"Tempo / threshold session.\n"
-                    f"- 10min easy warmup\n"
-                    f"- {tempo_dur}min at tempo pace ({tp}/km)\n"
-                    f"- 10min easy cooldown\n"
-                    f"- HR Zone 3-4 ({_hr_ceiling(hr_at_mp, 0.92)}-{_hr_ceiling(hr_at_mp, 1.0)}bpm)\n"
-                    f"- Total: {duration}min"
+                    f"Warmup\n"
+                    f"- 10m {ep}/km Pace\n"
+                    f"\n"
+                    f"Main Set\n"
+                    f"- {tempo_dur}m {tp}/km Pace\n"
+                    f"\n"
+                    f"Cooldown\n"
+                    f"- 10m {ep}/km Pace"
                 ),
                 "z4",
             )
@@ -607,12 +615,17 @@ class PeriodizationEngine:
             return (
                 "Interval Session",
                 (
-                    f"High-intensity intervals.\n"
-                    f"- 15min easy warmup with 4 strides\n"
-                    f"- {reps}x{rep_dur}min at {tp}/km with 2min easy jog\n"
-                    f"- 10min easy cooldown\n"
-                    f"- HR Zone 4-5 (>{_hr_ceiling(hr_at_mp, 0.95)}bpm during reps)\n"
-                    f"- Total: ~{duration}min"
+                    f"Warmup\n"
+                    f"- 10m {ep}/km Pace\n"
+                    f"- 4x 20s strides\n"
+                    f"- 40s {ep}/km Pace\n"
+                    f"\n"
+                    f"Main Set {reps}x\n"
+                    f"- {rep_dur}m {tp}/km Pace\n"
+                    f"- 2m {ep}/km Pace\n"
+                    f"\n"
+                    f"Cooldown\n"
+                    f"- 10m {ep}/km Pace"
                 ),
                 "z4",
             )
@@ -622,47 +635,45 @@ class PeriodizationEngine:
             return (
                 "Marathon Pace Run",
                 (
-                    f"Marathon-specific pace session.\n"
-                    f"- 10min easy warmup\n"
-                    f"- {mp_dur}min at marathon pace ({mp}/km)\n"
-                    f"- 15min easy cooldown\n"
-                    f"- HR at MP: ~{hr_at_mp}bpm (Zone 3)\n"
-                    f"- Practice race nutrition: 30g carbs every 30min\n"
-                    f"- Total: {duration}min"
+                    f"Warmup\n"
+                    f"- 10m {ep}/km Pace\n"
+                    f"\n"
+                    f"Main Set\n"
+                    f"- {mp_dur}m {mp}/km Pace\n"
+                    f"\n"
+                    f"Cooldown\n"
+                    f"- 15m {ep}/km Pace"
                 ),
                 "z3",
             )
 
         if session_type == "long_run":
-            easy_portion = round(duration * 0.75)
-            mp_portion = duration - easy_portion - 10
             if phase in ("base", "recovery"):
                 return (
                     "Long Run",
-                    (
-                        f"Long aerobic run.\n"
-                        f"- {duration}min at easy pace ({ep}/km)\n"
-                        f"- HR Zone 1-2 (<{_hr_ceiling(hr_at_mp, 0.85)}bpm)\n"
-                        f"- Practice fueling: 30-60g carbs/hr from 45min\n"
-                        f"- Time on feet is the goal, not pace"
-                    ),
+                    f"- {duration}m {ep}/km Pace",
                     "z2",
                 )
+            # Build/peak: progressive long run with MP finish
+            easy_portion = round(duration * 0.75)
+            mp_portion = max(10, duration - easy_portion - 10)
             return (
                 "Long Run with MP Finish",
                 (
-                    f"Progressive long run.\n"
-                    f"- {easy_portion}min easy ({ep}/km)\n"
-                    f"- {max(10, mp_portion)}min at marathon pace ({mp}/km)\n"
-                    f"- 10min easy cooldown\n"
-                    f"- HR cap during MP: {hr_at_mp}bpm\n"
-                    f"- Fueling: 60g carbs/hr -- practice race nutrition\n"
-                    f"- Total: {duration}min"
+                    f"Long Run\n"
+                    f"- {easy_portion}m {ep}/km Pace\n"
+                    f"\n"
+                    f"Marathon Pace\n"
+                    f"- {mp_portion}m {mp}/km Pace\n"
+                    f"\n"
+                    f"Cooldown\n"
+                    f"- 10m {ep}/km Pace"
                 ),
                 "z2",
             )
 
         if session_type == "strength":
+            # Strength sessions stay as notes — not parseable as run/ride steps
             return (
                 "Strength Training",
                 (
@@ -672,8 +683,7 @@ class PeriodizationEngine:
                     f"- Romanian deadlift 3x10\n"
                     f"- Glute bridges 3x12\n"
                     f"- Side plank 3x30s each\n"
-                    f"- Dead bugs 3x10 each\n\n"
-                    f"Focus: hip/glute activation and injury prevention"
+                    f"- Dead bugs 3x10 each"
                 ),
                 "z2",
             )
@@ -681,13 +691,7 @@ class PeriodizationEngine:
         if session_type == "ride_easy":
             return (
                 "Easy Ride",
-                (
-                    f"Easy aerobic ride.\n"
-                    f"- {duration}min Zone 1-2\n"
-                    f"- HR <{_hr_ceiling(hr_at_mp, 0.80)}bpm\n"
-                    f"- Cadence 85-95rpm\n"
-                    f"- Active recovery / aerobic maintenance"
-                ),
+                f"- {duration}m Z2 90rpm",
                 "z2",
             )
 
@@ -695,10 +699,14 @@ class PeriodizationEngine:
             return (
                 "Endurance Ride",
                 (
-                    f"Endurance ride.\n"
-                    f"- {duration}min Zone 2 (75-85% FTP)\n"
-                    f"- Steady effort\n"
-                    f"- Supports running recovery while building aerobic base"
+                    f"Warmup\n"
+                    f"- 10m Z1\n"
+                    f"\n"
+                    f"Main Set\n"
+                    f"- {max(10, duration - 15)}m Z2\n"
+                    f"\n"
+                    f"Cooldown\n"
+                    f"- 5m Z1"
                 ),
                 "z2",
             )
@@ -706,14 +714,14 @@ class PeriodizationEngine:
         if session_type == "rest":
             return (
                 "Rest Day",
-                "Full rest. Stretch, hydrate, sleep.\nTarget: 7.5+ hours tonight.",
+                "Full rest. Stretch, hydrate, sleep.",
                 "z1",
             )
 
         # Fallback
         return (
             session_type.replace("_", " ").title(),
-            f"{duration}min session",
+            f"- {duration}m",
             "z2",
         )
 

@@ -30,9 +30,23 @@ class IntervalsClient:
             r.raise_for_status()
             return r.json()
 
+    async def _delete(self, path: str):
+        async with httpx.AsyncClient(timeout=15) as c:
+            r = await c.delete(f"{self.base}/{path}", auth=self.auth)
+            r.raise_for_status()
+            return r.status_code
+
     async def create_event(self, event: dict):
         """Create a calendar event on Intervals.icu."""
         return await self._post("events", event)
+
+    async def delete_event(self, event_id: int):
+        """Delete a calendar event from Intervals.icu."""
+        return await self._delete(f"events/{event_id}")
+
+    async def events_range(self, oldest: str, newest: str) -> list:
+        """Fetch all events in a date range."""
+        return await self._get("events", {"oldest": oldest, "newest": newest})
 
     # ── Fetchers with caching + DB storage ────────────────
 

@@ -1095,47 +1095,34 @@ class Handlers:
             )
 
     async def _transcribe_voice(self, file_path: str) -> str | None:
-        """Transcribe voice file using OpenAI Whisper API or local fallback."""
+        """Transcribe voice file using faster-whisper (CTranslate2)."""
         try:
-            import subprocess
-            # Try local whisper if installed (pip install openai-whisper)
-            result = subprocess.run(
-                ["whisper", file_path, "--model", "base", "--output_format", "txt"],
-                capture_output=True, text=True, timeout=30,
-            )
-            if result.returncode == 0:
-                # Whisper outputs a .txt file alongside the input
-                txt_path = file_path.rsplit(".", 1)[0] + ".txt"
-                import os
-                if os.path.exists(txt_path):
-                    transcript = open(txt_path).read().strip()
-                    os.unlink(txt_path)
-                    return transcript
-        except (FileNotFoundError, subprocess.TimeoutExpired):
-            pass
+            from faster_whisper import WhisperModel
 
-        try:
-            # Fallback: use speech_recognition library
-            import speech_recognition as sr
-            recognizer = sr.Recognizer()
-            # Convert ogg to wav first
-            import subprocess
-            wav_path = file_path.rsplit(".", 1)[0] + ".wav"
-            subprocess.run(
-                ["ffmpeg", "-i", file_path, "-ar", "16000", "-ac", "1", wav_path, "-y"],
-                capture_output=True, timeout=15,
-            )
-            import os
-            if os.path.exists(wav_path):
-                with sr.AudioFile(wav_path) as source:
-                    audio = recognizer.record(source)
-                transcript = recognizer.recognize_google(audio)
-                os.unlink(wav_path)
-                return transcript
-        except Exception:
-            pass
+            # Cache model on first use — loaded once, reused across calls
+            if not hasattr(self, '_whisper_model') or self._whisper_model is None:
+                log.info("Loading faster-whisper model (base)...")
+                self._whisper_model = WhisperModel(
+                    "base",
+                    device="cpu",
+                    compute_type="int8",
+                )
 
-        return None
+            # Run transcription in thread pool (CPU-bound, don't block event loop)
+            def _transcribe():
+                segments, _info = self._whisper_model.transcribe(
+                    file_path,
+                    beam_size=5,
+                    vad_filter=True,
+                )
+                return " ".join(seg.text.strip() for seg in segments)
+
+            transcript = await asyncio.get_event_loop().run_in_executor(None, _transcribe)
+            return transcript.strip() if transcript and transcript.strip() else None
+
+        except Exception as e:
+            log.error("faster-whisper transcription failed: %s", e)
+            return None
 
     # ── Photos / Images ────────────────────────────────────────
 

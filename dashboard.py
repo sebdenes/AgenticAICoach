@@ -282,6 +282,16 @@ async def _fetch_whoop_cycles(days: int = 7) -> list:
     return []
 
 
+async def _fetch_whoop_workouts(days: int = 7) -> list:
+    """Fetch actual Whoop workouts (not daily cycles) for activity merge."""
+    if whoop and whoop.is_authenticated:
+        try:
+            return await whoop.workouts(days)
+        except Exception as exc:
+            log.warning("Whoop workouts fetch failed: %s", exc)
+    return []
+
+
 async def _fetch_wellness_augmented(days: int) -> list:
     """Fetch wellness from Intervals.icu, then fill HRV/RHR/recovery gaps from Whoop.
 
@@ -323,47 +333,97 @@ def _merge_activities(strava_acts: list, intervals_acts: list, whoop_workouts: l
       1. Strava (primary — richest activity metadata, real-time)
       2. Intervals.icu (enriches Strava records with TSS/IF/NP; adds Intervals-only activities)
       3. Whoop workouts (fills sessions tracked only on Whoop, not in Strava or Intervals)
+
+    TSS strategy:
+      - Intervals ``icu_training_load`` is the gold standard but only available for
+        activities uploaded directly to Intervals (not Strava-synced ones, which appear
+        as stubs in the API).
+      - For Strava activities without Intervals TSS, we fall back to Strava's
+        ``suffer_score`` (Relative Effort) as a rough TSS proxy.
     """
-    # Step 1: Build Intervals lookup by (date, sport_lower) key
+    # Sport name normalisation — maps variant names to a canonical form for dedup
+    _CANONICAL = {
+        "run": "run", "running": "run", "trail run": "run", "virtualrun": "run",
+        "ride": "ride", "cycling": "ride", "virtualride": "ride",
+        "mountain biking": "ride", "mountain bike ride": "ride", "spinning": "ride",
+        "weighttraining": "strength", "weightlifting": "strength",
+        "strength trainer": "strength", "strength (msk)": "strength",
+        "crossfit": "strength", "functional fitness": "strength",
+        "swim": "swim", "swimming": "swim",
+        "walk": "walk", "walking": "walk",
+        "hike": "hike", "hiking/rucking": "hike",
+        "yoga": "yoga", "rowing": "rowing",
+        "activity": "activity",
+    }
+
+    def _canon(name: str) -> str:
+        return _CANONICAL.get(name.lower(), name.lower())
+
+    # Step 1: Build Intervals lookup — only include records with a type (skip stubs)
     intervals_lookup: dict = {}
     for a in intervals_acts:
-        key = (
-            (a.get("start_date_local") or a.get("date") or "")[:10],
-            (a.get("type") or "").lower(),
-        )
+        itype = a.get("type") or ""
+        if not itype:
+            continue  # Skip Strava-synced stubs that have no type
+        key = ((a.get("start_date_local") or a.get("date") or "")[:10], _canon(itype))
         intervals_lookup[key] = a
+
+    # Build Whoop lookup by (date, canonical_sport) for strain enrichment
+    whoop_lookup: dict = {}
+    if whoop_workouts:
+        try:
+            from whoop import SPORT_MAP as _WS
+        except ImportError:
+            _WS = {}
+        for w in whoop_workouts:
+            ws = w.get("score", {}) or {}
+            wstart = (w.get("start") or "")[:10]
+            wsport = _WS.get(w.get("sport_id", -1), "Activity")
+            if wstart and ws.get("strain"):
+                wkey = (wstart, _canon(wsport))
+                whoop_lookup[wkey] = ws
 
     merged: list = []
     seen_keys: set = set()
+    seen_dates: set = set()  # track dates with real activities (for Whoop dedup)
 
-    # Step 2: Strava activities as base, enriched with Intervals TSS/IF/NP
+    # Step 2: Strava activities as base, enriched with Intervals TSS/IF/NP + Whoop strain
     for sa in strava_acts:
-        key = ((sa.get("start_date_local") or "")[:10], (sa.get("type") or "").lower())
+        sa_date = (sa.get("start_date_local") or "")[:10]
+        sa_type = _canon(sa.get("type") or "")
+        key = (sa_date, sa_type)
         seen_keys.add(key)
+        seen_dates.add(sa_date)
         iv = intervals_lookup.get(key, {})
         record = dict(sa)
-        if iv:
+        if iv and iv.get("icu_training_load"):
             record["icu_training_load"]      = iv.get("icu_training_load")
             record["icu_intensity"]          = iv.get("icu_intensity")
             record["icu_weighted_avg_watts"] = iv.get("icu_weighted_avg_watts")
             record["_source"] = "strava+intervals"
         else:
             record["_source"] = "strava"
+        # Enrich with Whoop strain if matching workout exists
+        wh = whoop_lookup.get(key)
+        if wh and wh.get("strain"):
+            record["whoop_strain"] = wh["strain"]
         merged.append(record)
 
-    # Step 3: Intervals-only activities (no Strava match) — virtual rides, older history, etc.
+    # Step 3: Intervals-only activities (no Strava match) — virtual rides, older history
     for ia in intervals_acts:
-        key = (
-            (ia.get("start_date_local") or ia.get("date") or "")[:10],
-            (ia.get("type") or "").lower(),
-        )
+        itype = ia.get("type") or ""
+        if not itype:
+            continue
+        ia_date = (ia.get("start_date_local") or ia.get("date") or "")[:10]
+        key = (ia_date, _canon(itype))
         if key not in seen_keys:
             record = dict(ia)
             record["_source"] = "intervals"
             merged.append(record)
             seen_keys.add(key)
+            seen_dates.add(ia_date)
 
-    # Step 4: Whoop workouts not matched by Strava or Intervals
+    # Step 4: Whoop workouts — only add if no Strava/Intervals activity covers that date+sport
     if whoop_workouts:
         try:
             from whoop import SPORT_MAP
@@ -372,9 +432,16 @@ def _merge_activities(strava_acts: list, intervals_acts: list, whoop_workouts: l
         for w in whoop_workouts:
             ws = w.get("score", {}) or {}
             start = (w.get("start") or "")[:10]
+            if not start:
+                continue
             sport_id = w.get("sport_id", -1)
             sport_name = SPORT_MAP.get(sport_id, "Activity")
-            key = (start, sport_name.lower())
+
+            # Skip generic "Activity" (sport_id -1) when real activities exist for this date
+            if sport_id == -1 and start in seen_dates:
+                continue
+
+            key = (start, _canon(sport_name))
             if key not in seen_keys:
                 merged.append({
                     "type": sport_name,
@@ -389,6 +456,8 @@ def _merge_activities(strava_acts: list, intervals_acts: list, whoop_workouts: l
                     "whoop_strain": ws.get("strain"),
                     "_source": "whoop",
                 })
+                seen_keys.add(key)
+                seen_dates.add(start)
 
     return merged
 
@@ -498,7 +567,8 @@ async def dashboard_snapshot():
 
     # Merge all activity sources — same logic as /api/activities
     strava_acts_today = db.get_strava_activities(days=7) if db else []
-    all_activities = _merge_activities(strava_acts_today, intervals_activities, whoop_cycles)
+    whoop_workouts = await _fetch_whoop_workouts(7)
+    all_activities = _merge_activities(strava_acts_today, intervals_activities, whoop_workouts)
 
     latest = _latest_wellness(wellness)
 
@@ -527,12 +597,13 @@ async def dashboard_snapshot():
     for a in all_activities:
         act_date = (a.get("start_date_local", a.get("date", "")) or "")[:10]
         if act_date == today and a.get("type"):
+            tss = a.get("icu_training_load") or a.get("suffer_score") or 0
             today_activities.append({
                 "type": a.get("type"),
                 "name": a.get("name", ""),
                 "duration_min": (a.get("moving_time", 0) or 0) // 60,
                 "distance_km": round((a.get("distance", 0) or 0) / 1000, 1),
-                "tss": a.get("icu_training_load") or 0,
+                "tss": tss,
                 "avg_hr": a.get("average_heartrate"),
                 "whoop_strain": a.get("whoop_strain"),
                 "_source": a.get("_source", "unknown"),
@@ -581,6 +652,19 @@ async def dashboard_snapshot():
             "strain": whoop_str,
         }
 
+    # Weekly training load — aggregate TSS from merged activities over the last 7 days
+    from datetime import timedelta as _td
+    week_ago = (datetime.now() - _td(days=7)).strftime("%Y-%m-%d")
+    weekly_tss = 0
+    weekly_duration_min = 0
+    weekly_count = 0
+    for a in all_activities:
+        act_date = (a.get("start_date_local", a.get("date", "")) or "")[:10]
+        if act_date >= week_ago and a.get("type"):
+            weekly_tss += a.get("icu_training_load") or a.get("suffer_score") or 0
+            weekly_duration_min += (a.get("moving_time", 0) or 0) // 60
+            weekly_count += 1
+
     return {
         "date": today,
         "wellness": {
@@ -595,6 +679,14 @@ async def dashboard_snapshot():
         "recovery": recovery,
         "today_activities": today_activities,
         "today_events": today_events,
+        "weekly_training_load": {
+            "total_tss": round(weekly_tss, 1),
+            "total_duration_min": weekly_duration_min,
+            "activity_count": weekly_count,
+            "ctl": round(ctl, 1),
+            "atl": round(atl, 1),
+            "tsb": round(tsb, 1),
+        },
         "alerts": alerts if isinstance(alerts, list) else [],
         "days_to_race": _days_to_race(),
         "race_name": athlete_cfg.race_name if athlete_cfg else None,
@@ -642,16 +734,18 @@ async def activity_history(days: int = Query(default=14, ge=1, le=365)):
     """
     strava_acts    = db.get_strava_activities(days=days)
     intervals_acts = await _fetch_intervals_activities(min(days, 90))
-    whoop_workouts = await _fetch_whoop_cycles(days)
+    whoop_workouts = await _fetch_whoop_workouts(days)
 
     merged = _merge_activities(strava_acts, intervals_acts, whoop_workouts)
 
     def _norm(a: dict) -> dict:
+        # TSS: prefer Intervals icu_training_load, fall back to Strava suffer_score
+        tss = a.get("icu_training_load") or a.get("suffer_score") or 0
         return {
             "date": (a.get("start_date_local", a.get("date", "")) or "")[:10],
             "type": a.get("type"),
             "name": a.get("name", ""),
-            "tss": a.get("icu_training_load") or 0,
+            "tss": tss,
             "duration_min": (a.get("moving_time", 0) or 0) // 60,
             "distance_km": round((a.get("distance", 0) or 0) / 1000, 1),
             "avg_hr": a.get("average_heartrate"),

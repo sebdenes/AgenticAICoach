@@ -218,10 +218,13 @@ class CoachTools:
             except Exception as exc:
                 log.warning("Strava fetch skipped: %s", exc)
 
-        # Build Intervals lookup by (date, sport_lower) for TSS enrichment
+        # Build Intervals lookup — skip stubs (Strava-synced records with no type)
         intervals_lookup: dict = {}
         for a in intervals_acts:
-            key = ((a.get("start_date_local") or "")[:10], (a.get("type") or "").lower())
+            itype = a.get("type") or ""
+            if not itype:
+                continue  # Skip Strava-synced stubs
+            key = ((a.get("start_date_local") or "")[:10], itype.lower())
             intervals_lookup[key] = a
 
         merged: list = []
@@ -233,18 +236,24 @@ class CoachTools:
             seen_keys.add(key)
             iv = intervals_lookup.get(key, {})
             record = dict(sa)
-            if iv:
+            if iv and iv.get("icu_training_load"):
                 record["icu_training_load"]      = iv.get("icu_training_load")
                 record["icu_intensity"]          = iv.get("icu_intensity")
                 record["icu_weighted_avg_watts"] = iv.get("icu_weighted_avg_watts")
                 record["_source"] = "strava+intervals"
             else:
+                # Fall back to Strava suffer_score as TSS proxy
+                if not record.get("icu_training_load") and record.get("suffer_score"):
+                    record["icu_training_load"] = record["suffer_score"]
                 record["_source"] = "strava"
             merged.append(record)
 
-        # Intervals-only activities (no Strava match) — virtual rides, older history, etc.
+        # Intervals-only activities (no Strava match) — virtual rides, older history
         for ia in intervals_acts:
-            key = ((ia.get("start_date_local") or "")[:10], (ia.get("type") or "").lower())
+            itype = ia.get("type") or ""
+            if not itype:
+                continue
+            key = ((ia.get("start_date_local") or "")[:10], itype.lower())
             if key not in seen_keys:
                 ia["_source"] = "intervals"
                 merged.append(ia)

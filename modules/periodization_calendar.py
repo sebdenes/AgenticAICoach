@@ -45,11 +45,47 @@ class PeriodizationCalendar:
                 results.append({"error": str(exc), "session": session.name, "date": session.date})
         return results
 
+    async def clear_planned_events(self, oldest: str, newest: str) -> int:
+        """Delete existing WORKOUT/NOTE events in a date range before pushing a new plan.
+
+        Prevents calendar bloat from repeated /plan or /replan calls.
+        """
+        try:
+            existing = await self._client.events_range(oldest, newest)
+        except Exception as exc:
+            log.warning("Failed to fetch existing events for cleanup: %s", exc)
+            return 0
+
+        deleted = 0
+        for event in existing:
+            cat = event.get("category", "")
+            if cat in ("WORKOUT", "NOTE"):
+                try:
+                    await self._client.delete_event(event["id"])
+                    deleted += 1
+                except Exception as exc:
+                    log.warning("Failed to delete event %s: %s", event.get("id"), exc)
+        log.info("Cleared %d existing planned events (%s to %s)", deleted, oldest, newest)
+        return deleted
+
     async def push_plan(self, plan) -> dict:
         """Push an entire training plan to Intervals.icu.
 
-        Returns summary dict with created/errors/total counts.
+        Clears existing WORKOUT/NOTE events in the plan's date range first,
+        then creates new events. Returns summary dict with created/errors/deleted counts.
         """
+        # Determine date range from plan
+        all_dates = [
+            s.date
+            for meso in plan.mesocycles
+            for mc in meso.microcycles
+            for s in mc.sessions
+            if s.date
+        ]
+        deleted = 0
+        if all_dates:
+            deleted = await self.clear_planned_events(min(all_dates), max(all_dates))
+
         created, errors = 0, 0
         for meso in plan.mesocycles:
             for mc in meso.microcycles:
@@ -59,8 +95,8 @@ class PeriodizationCalendar:
                         errors += 1
                     else:
                         created += 1
-        log.info("Plan push complete: %d created, %d errors", created, errors)
-        return {"created": created, "errors": errors, "total": created + errors}
+        log.info("Plan push complete: %d created, %d errors, %d deleted", created, errors, deleted)
+        return {"created": created, "errors": errors, "deleted": deleted, "total": created + errors}
 
     async def sync_completion(self, plan, activities: list[dict]) -> dict:
         """Compare planned sessions with completed activities.
