@@ -173,20 +173,31 @@ class CoachTools:
     async def _tool_get_wellness(self, days: int = 7) -> dict:
         days = max(1, min(days, 90))
         w = await self.iv.wellness(days=days)
-        # Augment with Whoop if available
+        # Augment with Whoop if available — fills HRV, RHR and recovery score gaps
         if self.whoop and self.whoop.is_authenticated:
             try:
-                whoop_data = await self.whoop.get_recovery_data(days=days)
-                # Merge whoop HRV/recovery into wellness where intervals doesn't have it
-                whoop_by_date = {r.get("date"): r for r in (whoop_data or [])}
+                whoop_records = await self.whoop.recovery(days=days)
+                # Whoop records use "created_at" (ISO string) as the date indicator
+                whoop_by_date: dict = {}
+                for r in (whoop_records or []):
+                    d = (r.get("created_at") or "")[:10]
+                    if d:
+                        whoop_by_date[d] = r
                 for record in w:
-                    d = record.get("date")
-                    if d in whoop_by_date:
-                        wr = whoop_by_date[d]
-                        if not record.get("hrv") and wr.get("hrv_rmssd_milli"):
-                            record["hrv"] = wr["hrv_rmssd_milli"]
-                        if not record.get("recoveryScore") and wr.get("score"):
-                            record["recoveryScore"] = wr["score"]
+                    # Intervals wellness records use "id" or "date" for the date
+                    d = record.get("id") or record.get("date") or ""
+                    if not d or d not in whoop_by_date:
+                        continue
+                    wr_score = whoop_by_date[d].get("score", {}) or {}
+                    # Fill HRV gap (Whoop hrv_rmssd_milli → same unit as Intervals hrv)
+                    if not record.get("hrv") and wr_score.get("hrv_rmssd_milli"):
+                        record["hrv"] = wr_score["hrv_rmssd_milli"]
+                    # Fill RHR gap
+                    if not record.get("restingHR") and wr_score.get("resting_heart_rate"):
+                        record["restingHR"] = wr_score["resting_heart_rate"]
+                    # Fill recovery score gap (Whoop 0-100%)
+                    if not record.get("recoveryScore") and wr_score.get("recovery_score"):
+                        record["recoveryScore"] = wr_score["recovery_score"]
             except Exception as exc:
                 log.warning("Whoop augmentation failed: %s", exc)
         return {"days": days, "count": len(w), "records": w}

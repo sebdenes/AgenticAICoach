@@ -282,6 +282,40 @@ async def _fetch_whoop_cycles(days: int = 7) -> list:
     return []
 
 
+async def _fetch_wellness_augmented(days: int) -> list:
+    """Fetch wellness from Intervals.icu, then fill HRV/RHR/recovery gaps from Whoop.
+
+    Mirrors the bot's ``_tool_get_wellness`` augmentation exactly so both surfaces
+    see the same enriched data.  Whoop recovery records use ``created_at`` (ISO
+    timestamp) as the date indicator; Intervals wellness records use ``id`` or ``date``.
+    """
+    wellness = await _fetch_intervals_wellness(days)
+    if not whoop or not whoop.is_authenticated:
+        return wellness
+    try:
+        whoop_records = await whoop.recovery(days=days)
+        # Build date → score lookup (Whoop uses created_at as the record date)
+        whoop_by_date: dict = {}
+        for r in (whoop_records or []):
+            d = (r.get("created_at") or "")[:10]
+            if d:
+                whoop_by_date[d] = r.get("score", {}) or {}
+        for record in wellness:
+            d = record.get("id") or record.get("date") or ""
+            if not d or d not in whoop_by_date:
+                continue
+            ws = whoop_by_date[d]
+            if not record.get("hrv") and ws.get("hrv_rmssd_milli"):
+                record["hrv"] = ws["hrv_rmssd_milli"]
+            if not record.get("restingHR") and ws.get("resting_heart_rate"):
+                record["restingHR"] = ws["resting_heart_rate"]
+            if not record.get("recoveryScore") and ws.get("recovery_score"):
+                record["recoveryScore"] = ws["recovery_score"]
+    except Exception as exc:
+        log.warning("Whoop wellness augmentation failed: %s", exc)
+    return wellness
+
+
 def _parse_wellness_for_modules(raw: list) -> list:
     """Normalise wellness rows from either Intervals.icu API or DB format.
 
@@ -378,24 +412,51 @@ async def dashboard_snapshot():
     """Today's combined coaching dashboard snapshot."""
     today = _today()
 
-    # Fetch data in parallel-ish (each has its own caching)
-    wellness = await _fetch_intervals_wellness(14)
-    activities = await _fetch_intervals_activities(7)
+    # Fetch data (each helper has its own caching / error handling)
+    wellness = await _fetch_wellness_augmented(14)          # Whoop-enriched
+    intervals_activities = await _fetch_intervals_activities(7)
     events = await _fetch_intervals_events(3)
     whoop_recovery = await _fetch_whoop_recovery(7)
     whoop_cycles = await _fetch_whoop_cycles(7)
 
+    # Merge Strava DB into today's activities — same dedup logic as /api/activities
+    intervals_keys = {
+        ((a.get("start_date_local", a.get("date", "")) or "")[:10],
+         (a.get("type") or "").lower())
+        for a in intervals_activities
+    }
+    all_activities = list(intervals_activities)
+    if db:
+        for sa in db.get_strava_activities(days=7):
+            key = ((sa.get("start_date_local") or "")[:10], (sa.get("type") or "").lower())
+            if key not in intervals_keys:
+                all_activities.append(sa)
+
     latest = _latest_wellness(wellness)
 
-    # Recovery score
-    baselines = _baselines()
+    # Recovery score — use PersonalizedThresholds (same as bot) when enough history
+    if PersonalizedThresholds and len(wellness) >= 7:
+        try:
+            activities_30 = await _fetch_intervals_activities(30)
+            pt = PersonalizedThresholds(wellness, activities_30)
+            baselines = {
+                "hrv": pt.hrv_baseline,
+                "rhr": pt.rhr_baseline,
+                "sleep": getattr(pt, "sleep_baseline", athlete_cfg.sleep_target_hours if athlete_cfg else 7.5),
+            }
+        except Exception as exc:
+            log.warning("PersonalizedThresholds failed in dashboard snapshot: %s", exc)
+            baselines = _baselines()
+    else:
+        baselines = _baselines()
+
     recovery = calculate_recovery_score(latest, baselines) if latest else {
         "score": 0, "grade": "unknown", "recommendation": "No data", "signals": []
     }
 
-    # Today's activities
+    # Today's activities (Intervals + Strava merged)
     today_activities = []
-    for a in activities:
+    for a in all_activities:
         act_date = (a.get("start_date_local", a.get("date", "")) or "")[:10]
         if act_date == today and a.get("type"):
             today_activities.append({
@@ -405,6 +466,7 @@ async def dashboard_snapshot():
                 "distance_km": round((a.get("distance", 0) or a.get("distance_m", 0) or 0) / 1000, 1),
                 "tss": a.get("icu_training_load", 0) or a.get("tss", 0) or 0,
                 "avg_hr": a.get("average_heartrate") or a.get("avg_hr"),
+                "_source": a.get("_source", "intervals"),
             })
 
     # Today's planned events
@@ -475,8 +537,12 @@ async def dashboard_snapshot():
 
 @app.get("/api/wellness")
 async def wellness_history(days: int = Query(default=14, ge=1, le=365)):
-    """Wellness time-series: CTL, ATL, TSB, RHR, HRV, sleep for each day."""
-    raw = await _fetch_intervals_wellness(days)
+    """Wellness time-series: CTL, ATL, TSB, RHR, HRV, sleep for each day.
+
+    HRV and RHR are augmented with Whoop data where Intervals.icu is missing values,
+    matching the bot's ``_tool_get_wellness`` behaviour exactly.
+    """
+    raw = await _fetch_wellness_augmented(days)
     result = []
     for d in raw:
         ctl = d.get("ctl", 0)
@@ -650,9 +716,29 @@ async def sleep_history(days: int = Query(default=14, ge=1, le=365)):
 
 @app.get("/api/recovery")
 async def recovery_trend():
-    """Recovery composite score over recent days."""
-    wellness = await _fetch_intervals_wellness(30)
-    baselines = _baselines()
+    """Recovery composite score over recent days.
+
+    Uses PersonalizedThresholds (dynamic, computed from 30-day history) when
+    sufficient data is available — matching the bot's ``_tool_analyze_recovery``
+    behaviour exactly.  Falls back to static athlete-config baselines otherwise.
+    """
+    wellness = await _fetch_wellness_augmented(30)      # Whoop-enriched
+    activities = await _fetch_intervals_activities(30)
+
+    # Dynamic baselines — consistent with bot's _tool_analyze_recovery
+    if PersonalizedThresholds and len(wellness) >= 7:
+        try:
+            pt = PersonalizedThresholds(wellness, activities)
+            baselines = {
+                "hrv": pt.hrv_baseline,
+                "rhr": pt.rhr_baseline,
+                "sleep": getattr(pt, "sleep_baseline", athlete_cfg.sleep_target_hours if athlete_cfg else 7.5),
+            }
+        except Exception as exc:
+            log.warning("PersonalizedThresholds failed in /api/recovery: %s", exc)
+            baselines = _baselines()
+    else:
+        baselines = _baselines()
 
     trend = []
     for entry in wellness:
@@ -677,7 +763,7 @@ async def recovery_trend():
 @app.get("/api/predictions")
 async def race_predictions():
     """Marathon race predictions with multiple models."""
-    wellness = await _fetch_intervals_wellness(30)
+    wellness = await _fetch_wellness_augmented(30)
     activities = await _fetch_intervals_activities(30)
 
     latest = _latest_wellness(wellness)
@@ -711,7 +797,7 @@ async def active_alerts():
     if generate_alerts is None:
         return {"alerts": [], "message": "Alerts module not available"}
 
-    wellness = await _fetch_intervals_wellness(14)
+    wellness = await _fetch_wellness_augmented(14)
     activities = await _fetch_intervals_activities(14)
 
     try:
@@ -746,7 +832,7 @@ async def pattern_analysis():
     if analyze_patterns is None:
         return {"patterns": None, "message": "Intelligence module not available"}
 
-    wellness = await _fetch_intervals_wellness(30)
+    wellness = await _fetch_wellness_augmented(30)
     activities = await _fetch_intervals_activities(30)
     config = asdict(athlete_cfg) if athlete_cfg else {}
 
@@ -766,7 +852,7 @@ async def personalized_thresholds():
     if PersonalizedThresholds is None:
         return {"thresholds": None, "message": "Thresholds module not available"}
 
-    wellness = await _fetch_intervals_wellness(30)
+    wellness = await _fetch_wellness_augmented(30)
     activities = await _fetch_intervals_activities(30)
 
     try:
@@ -986,7 +1072,7 @@ async def api_weather():
 async def api_performance_forecast(days: int = Query(default=14, ge=7, le=60)):
     """14-day CTL forecast + race-day projection."""
     try:
-        w = await _fetch_intervals_wellness(30)
+        w = await _fetch_wellness_augmented(30)
         a = await _fetch_intervals_activities(30)
 
         pf = _performance_forecaster
